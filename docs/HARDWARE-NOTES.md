@@ -79,6 +79,19 @@ For an Amiga period `p`: `FREQ ≈ 1469309 / p`.
 
 - `$D06F` bit 7: PALNTSC, set = NTSC timing.
 
+## Keyboard
+
+- `$D610`: ASCII code of the oldest queued key, 0 if none; write any value
+  to remove it from the queue. Needs neither KERNAL nor interrupts.
+
+## Toolchain behaviour
+
+- The llvm-mos MEGA65 startup code executes `SEI` and switches ROMs out
+  before `main()`; interrupts stay disabled until the program exits. KERNAL
+  services that depend on the system interrupt (GETIN keyboard input, the
+  jiffy clock) therefore do not work. Modplay65 reads the keyboard through
+  `$D610` and will install its own interrupt handlers.
+
 ## Misc
 
 - `$D02F`: write `$47` then `$53` to enable MEGA65 I/O.

@@ -8,10 +8,10 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include <cbm.h>
 #include <mega65/memory.h>
 
 #include "hw/audio_dma.h"
+#include "hw/keyboard.h"
 
 #ifndef MODPLAY65_VERSION
 #define MODPLAY65_VERSION "dev"
@@ -21,9 +21,11 @@
 #define TEST_TONE_FREQ AUDIO_DMA_FREQ(14080)
 #define TEST_TONE_VOLUME 0x60
 
-/* PETSCII codes returned by GETIN for the unshifted keys. */
-#define KEY_T 0x54
-#define KEY_Q 0x51
+/* Fold ASCII letters to lower case so shifted keys work too. */
+static uint8_t to_lower(uint8_t c)
+{
+    return (c >= 'A' && c <= 'Z') ? (uint8_t)(c | 0x20) : c;
+}
 
 static uint8_t is_ntsc(void)
 {
@@ -52,6 +54,7 @@ int main(void)
 
     mega65_io_enable();
     audio_dma_init();
+    keyboard_flush();
 
     printf("\nModplay65 %s\n", MODPLAY65_VERSION);
     printf("MOD and SID player for the MEGA65\n\n");
@@ -61,8 +64,8 @@ int main(void)
     printf("Q = quit\n");
 
     for (;;) {
-        key = cbm_k_getin();
-        if (key == KEY_T) {
+        key = to_lower(keyboard_poll());
+        if (key == 't') {
             playing = !playing;
             if (playing) {
                 tone_on();
@@ -71,7 +74,7 @@ int main(void)
                 tone_off();
                 printf("Tone off\n");
             }
-        } else if (key == KEY_Q) {
+        } else if (key == 'q') {
             break;
         }
     }
