@@ -30,7 +30,12 @@ jobs:
         run: cmake --build build
 
       - name: Show result
-        run: ls -l build/modplay65.prg
+        run: |
+          ls -l build/modplay65.prg
+          sha256sum build/modplay65.prg
+          echo "PRG-BASE64-BEGIN"
+          base64 -w 76 build/modplay65.prg
+          echo "PRG-BASE64-END"
 
       - name: Upload PRG
         uses: actions/upload-artifact@v4
