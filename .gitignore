@@ -1,0 +1,10 @@
+/build/
+/build-*/
+compile_commands.json
+*.prg
+*.d81
+*.o
+*.elf
+.DS_Store
+.vscode/
+.idea/
