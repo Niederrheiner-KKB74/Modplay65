@@ -1,8 +1,9 @@
 # Modplay65 architecture
 
-Status: draft 1 (November 2026). Nothing in here has run on hardware yet.
-Items marked **[verify]** are assumptions that an early milestone must
-confirm on Xemu and on a real MEGA65. See [ROADMAP.md](ROADMAP.md) for the
+Status: draft 2 (12 November 2026). Audio DMA sample playback, looping and
+the left/right mapping are confirmed on real hardware; everything else is
+still untested. Items marked **[verify]** are assumptions that an early
+milestone must confirm on Xemu and on a real MEGA65. See [ROADMAP.md](ROADMAP.md) for the
 order of work and [HARDWARE-NOTES.md](HARDWARE-NOTES.md) for register details.
 
 ## 1. Goal
@@ -152,9 +153,9 @@ Per tick, the interrupt handler:
 - MOD samples are signed 8-bit, which is the DMA default.
 - Loops: a looping sample first plays from its start, then repeats between
   loop start and loop end. The DMA channel has one base address, one top
-  address and a loop flag, so the replayer must switch the base address to
-  the loop start once the first pass is running. The exact register sequence
-  is a milestone 1 experiment.
+  address and a loop flag, so the replayer starts a looping window that ends
+  at the loop end and then rewrites the base address to the loop start
+  (confirmed on hardware, see HARDWARE-NOTES.md).
 - Effect `9xx` (sample offset) sets the start address directly.
 
 ### 6.6 Effects
