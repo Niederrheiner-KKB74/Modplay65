@@ -86,3 +86,21 @@ void audio_dma_play(uint8_t channel, uint32_t address, uint16_t length,
     c->ctrl = (uint8_t)(AUDIO_DMA_CTRL_ENABLE | AUDIO_DMA_CTRL_8BIT |
                         (loop ? AUDIO_DMA_CTRL_LOOP : 0));
 }
+
+void audio_dma_play_looped(uint8_t channel, uint32_t address,
+                           uint32_t loop_start, uint32_t loop_end,
+                           uint32_t freq)
+{
+    /* Start as one long looping window that ends at the loop end ... */
+    audio_dma_play(channel, address, (uint16_t)(loop_end - address), freq, 1);
+    /* ... then move the base: it is only read when the playhead wraps. */
+    audio_dma_set_base(channel, loop_start);
+}
+
+uint32_t audio_dma_position(uint8_t channel)
+{
+    volatile struct audio_dma_channel *c = &AUDIO_DMA_CH[channel];
+
+    return (uint32_t)c->cur[0] | ((uint32_t)c->cur[1] << 8) |
+           ((uint32_t)c->cur[2] << 16);
+}

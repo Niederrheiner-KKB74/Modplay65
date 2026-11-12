@@ -66,6 +66,18 @@ For an Amiga period `p`: `FREQ ≈ 1469309 / p`.
 - Verified in Xemu: with a looped 32-byte sample at `$040000` the playhead
   (`+A..+C`) stays inside `$040000-$04001F`.
 
+### Playback recipes
+
+- One-shot: base = start, top = low 16 bits of the end, current address =
+  start, control = enable + 8-bit. In Xemu the channel sets the stop flag
+  (bit 3) at the end.
+- Play once, then loop a tail: start as a looping window from the sample
+  start to the loop end, then immediately rewrite the base address to the
+  loop start. The base is only read when the playhead wraps. Verified in
+  Xemu; **[verify]** on hardware.
+- Looped 32-byte sine sample confirmed audible on real hardware
+  (12 Nov 2026), both sides.
+
 ## SID
 
 | Chip | Address |

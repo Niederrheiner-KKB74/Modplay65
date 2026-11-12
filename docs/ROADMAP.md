@@ -16,10 +16,12 @@ built on top of them.
 
 - [x] Starter program runs in Xemu: screen, keys, looped sample playback
       (registers and playhead checked; sound not yet confirmed by ear)
-- [ ] Confirm the test tone by ear on Xemu and on real hardware
+- [x] Test tone confirmed by ear on real hardware (12 Nov 2026)
 - [ ] Play one raw 8-bit sample from bank 4, one-shot and looped
+      (test bench keys 1 and T; works in Xemu, hardware check pending)
 - [ ] Confirm the frequency formula by measuring a known tone
 - [ ] Work out the register sequence for "play once, then loop a sub-range"
+      (test bench key 2; works in Xemu, hardware check pending)
 - [ ] Confirm the memory limits (384 KB, 64 KB window) and which side is left
 - [ ] Record the findings in HARDWARE-NOTES.md
 

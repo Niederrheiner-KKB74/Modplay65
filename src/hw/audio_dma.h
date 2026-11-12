@@ -80,6 +80,18 @@ void audio_dma_play(uint8_t channel, uint32_t address, uint16_t length,
                     uint32_t freq, uint8_t loop);
 
 /*
+ * Play a sample once from address, then repeat the range
+ * loop_start..loop_end (end exclusive) for ever. This is how looped MOD
+ * instruments behave. All three addresses must lie in the same 64 KB bank.
+ */
+void audio_dma_play_looped(uint8_t channel, uint32_t address,
+                           uint32_t loop_start, uint32_t loop_end,
+                           uint32_t freq);
+
+/* Read the 24-bit playhead of a channel. */
+uint32_t audio_dma_position(uint8_t channel);
+
+/*
  * Start the built-in 32-sample sine wave on a channel.
  * freq is a frequency register value for the sample rate, which is
  * 32 times the audible pitch: use AUDIO_DMA_FREQ(pitch_hz * 32).
