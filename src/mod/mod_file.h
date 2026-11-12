@@ -12,8 +12,16 @@
 #include "mod/mod_load.h"
 
 #define MOD_FILE_ATTIC 0x8000000UL  /* file image in Attic RAM          */
-#define MOD_SAMPLE_RAM 0x040000UL   /* chip RAM for samples: bank 4 ... */
-#define MOD_SAMPLE_BANKS 2          /* ... and bank 5                   */
+/*
+ * Chip RAM used for samples, about 182 KB: banks 4 and 5, and the part of
+ * bank 1 between the DOS area ($10000-$11FFF) and the colour RAM window
+ * ($1F800-$1FFFF). The program never returns to BASIC, so BASIC's use of
+ * bank 1 does not matter.
+ */
+#define MOD_SAMPLE_REGIONS \
+    { 0x040000UL, 0x04FFFFUL }, \
+    { 0x050000UL, 0x05FFFFUL }, \
+    { 0x012000UL, 0x01F800UL }
 
 enum mod_file_error {
     MOD_FILE_OK = 0,

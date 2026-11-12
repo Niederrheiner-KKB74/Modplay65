@@ -49,12 +49,15 @@ built on top of them.
 - [x] Host unit tests for the engine; `modtrace` tool to run a file
       through the engine on the PC
 - [x] Confirmed on real hardware by ear with one module (12 Nov 2026)
-- [ ] Test with modules that use more effects (the first test file only
-      uses `Fxx`) and looped samples
+- [x] Sample memory extended to 182 KB (banks 4, 5 and part of bank 1)
+- [ ] Test with modules that use more effects and looped samples: seven
+      more files load and run in Xemu and on the PC; listening test on
+      hardware pending
 - [ ] Host-side reference test against a known-good player
 - [ ] Move the tick into an interrupt once the UI needs longer screen
       updates
-- [ ] Decide the large-module strategy (ARCHITECTURE.md, open decision 1)
+- [ ] Decide the strategy for modules above 182 KB (ARCHITECTURE.md,
+      open decision 1)
 
 ## M4 - User interface
 

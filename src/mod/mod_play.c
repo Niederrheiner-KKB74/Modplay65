@@ -159,9 +159,6 @@ static void channel_row(struct mod_player *p, struct mod_channel *c,
 
         if (c->effect == 0x3 || c->effect == 0x5) {
             c->porta_target = period_of(c, note);
-            if (c->period == 0) { /* nothing playing yet: start the note */
-                trigger(p, c, note);
-            }
         } else if (c->effect == 0xE && hi == 0xD && lo != 0) {
             c->delayed_note = note;
         } else {

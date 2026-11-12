@@ -54,6 +54,20 @@ int main(int argc, char **argv)
         printf("parse error %d\n", i);
         return 1;
     }
+    {
+        /* same sample memory as the MEGA65 build (mod_file.h) */
+        static const struct mod_region regions[] = {
+            { 0x040000UL, 0x04FFFFUL },
+            { 0x050000UL, 0x05FFFFUL },
+            { 0x012000UL, 0x01F800UL }
+        };
+        uint32_t addr[MOD_MAX_SAMPLES];
+
+        i = mod_place_samples(&info, regions, 3, addr);
+        printf("sample memory: %lu bytes, %s\n",
+               (unsigned long)info.sample_bytes,
+               i == MOD_OK ? "fits" : "DOES NOT FIT");
+    }
     mod_player_init(&p, &info, 0);
     while (!p.song_looped && ticks < 2000000) {
         uint8_t order = p.order, row = p.row, pattern = p.pattern;

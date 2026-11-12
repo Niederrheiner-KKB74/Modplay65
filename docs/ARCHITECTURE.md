@@ -83,7 +83,7 @@ docs/               this documentation
 | --- | --- |
 | `$0002000-$000CFFF` (bank 0) | Program code, data, stack |
 | `$0010000-$0011FFF` (bank 1) | DOS, do not touch |
-| rest of bank 1 | Free in principle; colour RAM mirror at `$1F800` **[verify]** |
+| `$0012000-$001F7FF` (bank 1) | 54 KB sample playback memory (below the colour RAM window at `$1F800`) |
 | `$0020000-$003FFFF` (banks 2-3) | ROM, write-protected |
 | `$0040000-$005FFFF` (banks 4-5) | 128 KB free chip RAM: sample playback memory, SID sandbox |
 | `$8000000-$87FFFFF` | 8 MB Attic RAM: whole-file storage, pattern data |
@@ -99,14 +99,14 @@ Consequences for MOD playback:
 - Pattern data (1 KB per pattern, often more than 60 KB in total) goes to
   Attic RAM. The current pattern is copied into a 1 KB buffer in bank 0 when
   the song position changes.
-- Sample data is copied into banks 4-5. Modules with up to about 128 KB of
-  samples play directly.
-- Larger modules need a strategy. Options, to be decided after milestone 1:
-  (a) refuse with a clear message; (b) also use the free part of bank 1;
-  (c) give up the ROM, take banks 2-3 as well (384 KB total, but then
-  keyboard and file access must not depend on the KERNAL);
-  (d) keep all samples in Attic RAM and swap the ones needed by upcoming
-  patterns into chip RAM.
+- Sample data is copied into banks 4-5 and the free part of bank 1, about
+  182 KB in total. Samples are placed largest first; each stays inside one
+  bank. Six of the first eight test modules need more than 128 KB, one
+  (300 KB) does not fit and is refused with a message.
+- Open: modules above 182 KB. Options: (a) keep refusing; (b) take the ROM
+  banks 2-3 as well (about 310 KB, but a reset then needs the ROM to be
+  reloaded); (c) store oversized modules at half the sample rate;
+  (d) keep samples in Attic RAM and swap them into chip RAM as needed.
 
 ## 6. MOD playback
 
@@ -118,8 +118,9 @@ Consequences for MOD playback:
 - The loader reads the whole file in 512-byte blocks into Attic RAM at
   `$8000000`, parses the 1084-byte header in bank 0 and copies the samples
   from Attic RAM to chip RAM. Patterns are read from the Attic copy.
-- Sample placement: first fit in banks 4-5; a sample never crosses a 64 KB
-  boundary and never ends on the last byte of a bank.
+- Sample placement: largest first into three regions (see section 5); a
+  sample never crosses a 64 KB boundary and never ends on the last byte of
+  a bank.
 
 ### 6.2 Channel mapping
 
@@ -275,7 +276,7 @@ the master oscilloscope plus oscillator 3 and envelope 3 read-back.
 
 ## 11. Open decisions
 
-1. Strategy for modules with more than 128 KB of samples (section 5).
+1. Strategy for modules with more than 182 KB of samples (section 5).
 2. SD card only, or D81 support from the start (section 8).
 3. Text-mode UI with graphics area as proposed, or a full bitmap UI.
 4. Whether to support the MEGA65's PAL and NTSC video modes equally from the

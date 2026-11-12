@@ -12,6 +12,8 @@
 static uint8_t block[BLOCK];
 static uint8_t header[MOD_HEADER_SIZE];
 static char name_buf[64];
+static const struct mod_region regions[] = { MOD_SAMPLE_REGIONS };
+#define NUM_REGIONS (sizeof(regions) / sizeof(regions[0]))
 
 static uint32_t ptr32(const void *p)
 {
@@ -27,7 +29,7 @@ const char *mod_file_error_text(enum mod_file_error e)
     case MOD_FILE_NOT_A_MOD: return "not a MOD file";
     case MOD_FILE_CHANNELS: return "only 4-channel modules are supported";
     case MOD_FILE_SAMPLE_TOO_BIG: return "a sample is larger than 64 KB";
-    case MOD_FILE_NO_SAMPLE_RAM: return "samples need more than 128 KB";
+    case MOD_FILE_NO_SAMPLE_RAM: return "samples do not fit into 182 KB of sample memory";
     case MOD_FILE_TRUNCATED: return "file is incomplete";
     }
     return "unknown error";
@@ -92,7 +94,7 @@ enum mod_file_error mod_file_load(const char *filename, struct mod_file *mod,
     if (size < mod->info.sample_offset) {
         return MOD_FILE_TRUNCATED;
     }
-    err = mod_place_samples(&mod->info, MOD_SAMPLE_RAM, MOD_SAMPLE_BANKS,
+    err = mod_place_samples(&mod->info, regions, NUM_REGIONS,
                             mod->sample_addr);
     if (err == MOD_ERR_SAMPLE_TOO_BIG) {
         return MOD_FILE_SAMPLE_TOO_BIG;
@@ -103,8 +105,10 @@ enum mod_file_error mod_file_load(const char *filename, struct mod_file *mod,
 
     /* Copy the samples to chip RAM. Many files are a little short at the
      * end: clear the sample RAM first and copy only what the file has. */
-    lfill(MOD_SAMPLE_RAM, 0, 0);          /* count 0 = 64 KB */
-    lfill(MOD_SAMPLE_RAM + 0x10000UL, 0, 0);
+    for (i = 0; i < NUM_REGIONS; ++i) {
+        lfill(regions[i].start, 0,
+              (uint16_t)(regions[i].end - regions[i].start));
+    }
     offset = mod->info.sample_offset;
     for (i = 0; i < MOD_MAX_SAMPLES; ++i) {
         uint32_t len = mod->info.sample[i].length;

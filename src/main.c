@@ -80,6 +80,7 @@ static void input_filename(uint8_t row)
 {
     uint8_t len = 0;
     uint8_t key;
+    uint8_t fresh = 1; /* the first typed character replaces the old name */
 
     while (filename[len]) {
         ++len;
@@ -95,7 +96,12 @@ static void input_filename(uint8_t row)
         }
         if (key == KEY_DELETE && len) {
             filename[--len] = 0;
-        } else if (key > ' ' && key < 0x7F && len < sizeof(filename) - 1) {
+            fresh = 0;
+        } else if (key > ' ' && key < 0x7F && (fresh || len < sizeof(filename) - 1)) {
+            if (fresh) {
+                len = 0;
+                fresh = 0;
+            }
             filename[len++] = (char)to_upper(key);
             filename[len] = 0;
         }

@@ -109,29 +109,46 @@ static void test_other_formats(void)
 
 static void test_placement(void)
 {
+    static const struct mod_region two[] = {
+        { 0x40000, 0x4FFFF }, { 0x50000, 0x5FFFF }
+    };
+    static const struct mod_region three[] = {
+        { 0x40000, 0x4FFFF }, { 0x50000, 0x5FFFF }, { 0x12000, 0x1F800 }
+    };
     static struct mod_info info;
     uint32_t addr[MOD_MAX_SAMPLES];
 
+    /* largest first: 40000 into bank 4, 30000 does not fit behind it */
     memset(&info, 0, sizeof info);
-    info.sample[0].length = 40000;
-    info.sample[2].length = 30000; /* would cross into the next bank */
-    info.sample[3].length = 100;
-    CHECK(mod_place_samples(&info, 0x40000, 2, addr) == MOD_OK);
-    CHECK(addr[0] == 0x40000);
-    CHECK(addr[1] == 0);
+    info.sample[0].length = 100;
+    info.sample[2].length = 30000;
+    info.sample[3].length = 40000;
+    CHECK(mod_place_samples(&info, two, 2, addr) == MOD_OK);
+    CHECK(addr[3] == 0x40000);
     CHECK(addr[2] == 0x50000);
-    CHECK(addr[3] == 0x50000 + 30000);
-    CHECK(mod_place_samples(&info, 0x40000, 1, addr) == MOD_ERR_NO_MEMORY);
+    CHECK(addr[0] == 0x40000 + 40000);
+    CHECK(addr[1] == 0);
+    CHECK(mod_place_samples(&info, two, 1, addr) == MOD_ERR_NO_MEMORY);
+
+    /* a third, smaller region takes what is left over */
+    info.sample[2].length = 15000;
+    info.sample[5].length = 50000;
+    info.sample[6].length = 50000;
+    CHECK(mod_place_samples(&info, two, 2, addr) == MOD_ERR_NO_MEMORY);
+    CHECK(mod_place_samples(&info, three, 3, addr) == MOD_OK);
+    CHECK(addr[5] == 0x40000);
+    CHECK(addr[6] == 0x50000);
+    CHECK(addr[3] == 0x12000);
+    CHECK(addr[2] == 0x40000 + 50000);
 
     info.sample[4].length = 0x10000;
-    CHECK(mod_place_samples(&info, 0x40000, 2, addr) ==
-          MOD_ERR_SAMPLE_TOO_BIG);
+    CHECK(mod_place_samples(&info, three, 3, addr) == MOD_ERR_SAMPLE_TOO_BIG);
 
-    /* a sample may not end on the last byte of a bank */
+    /* the last byte of a bank stays unused */
     memset(&info, 0, sizeof info);
     info.sample[0].length = 0xFFFF;
     info.sample[1].length = 1;
-    CHECK(mod_place_samples(&info, 0x40000, 2, addr) == MOD_OK);
+    CHECK(mod_place_samples(&info, two, 2, addr) == MOD_OK);
     CHECK(addr[0] == 0x40000);
     CHECK(addr[1] == 0x50000);
 }

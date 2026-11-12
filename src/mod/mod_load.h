@@ -21,7 +21,7 @@ enum mod_error {
     MOD_ERR_TOO_SHORT,     /* fewer header bytes than needed          */
     MOD_ERR_NOT_A_MOD,     /* no signature and not a plausible 15-instrument file */
     MOD_ERR_CHANNELS,      /* a MOD, but not a 4-channel one          */
-    MOD_ERR_SAMPLE_TOO_BIG,/* one sample exceeds a 64 KB window       */
+    MOD_ERR_SAMPLE_TOO_BIG,/* one sample is larger than any region    */
     MOD_ERR_NO_MEMORY      /* samples do not fit into the given memory */
 };
 
@@ -54,14 +54,21 @@ struct mod_info {
 enum mod_error mod_parse_header(const uint8_t *header, uint16_t header_len,
                                 struct mod_info *info);
 
+/* A stretch of sample memory inside one 64 KB bank; end is exclusive. */
+struct mod_region {
+    uint32_t start;
+    uint32_t end;
+};
+
 /*
- * Assign each sample a playback address inside [first, first + banks * 64K).
- * first must be a multiple of 64 KB. A sample never crosses a 64 KB bank
- * boundary and never ends on the last byte of a bank, because the audio
- * DMA end address has only 16 bits. address[i] is 0 for empty samples.
+ * Assign each sample a playback address inside the given regions, largest
+ * samples first. A region must not cross a 64 KB bank boundary and must
+ * not include the last byte of a bank, because the audio DMA end address
+ * has only 16 bits. address[i] is 0 for empty samples.
  */
-enum mod_error mod_place_samples(const struct mod_info *info, uint32_t first,
-                                 uint8_t banks,
+enum mod_error mod_place_samples(const struct mod_info *info,
+                                 const struct mod_region *regions,
+                                 uint8_t num_regions,
                                  uint32_t address[MOD_MAX_SAMPLES]);
 
 #endif

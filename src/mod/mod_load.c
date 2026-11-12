@@ -151,33 +151,59 @@ enum mod_error mod_parse_header(const uint8_t *header, uint16_t header_len,
     return MOD_OK;
 }
 
-enum mod_error mod_place_samples(const struct mod_info *info, uint32_t first,
-                                 uint8_t banks,
+#define MAX_REGIONS 8
+
+enum mod_error mod_place_samples(const struct mod_info *info,
+                                 const struct mod_region *regions,
+                                 uint8_t num_regions,
                                  uint32_t address[MOD_MAX_SAMPLES])
 {
-    uint32_t next = first;
-    uint32_t limit = first + ((uint32_t)banks << 16);
-    uint8_t i;
+    uint32_t next[MAX_REGIONS];
+    uint8_t done[MOD_MAX_SAMPLES];
+    uint32_t largest_region = 0;
+    uint8_t i, r, n;
 
-    for (i = 0; i < MOD_MAX_SAMPLES; ++i) {
-        uint32_t len = info->sample[i].length;
-
-        address[i] = 0;
-        if (len == 0) {
-            continue;
+    if (num_regions > MAX_REGIONS) {
+        num_regions = MAX_REGIONS;
+    }
+    for (r = 0; r < num_regions; ++r) {
+        next[r] = regions[r].start;
+        if (regions[r].end - regions[r].start > largest_region) {
+            largest_region = regions[r].end - regions[r].start;
         }
-        if (len > 0xFFFFUL) {
+    }
+    for (i = 0; i < MOD_MAX_SAMPLES; ++i) {
+        address[i] = 0;
+        done[i] = (uint8_t)(info->sample[i].length == 0);
+        if (info->sample[i].length > largest_region) {
             return MOD_ERR_SAMPLE_TOO_BIG;
         }
-        /* end (exclusive) must stay below the next bank boundary */
-        if ((next & 0xFFFFUL) + len > 0xFFFFUL) {
-            next = (next | 0xFFFFUL) + 1;
+    }
+    /* First fit, largest sample first. */
+    for (n = 0; n < MOD_MAX_SAMPLES; ++n) {
+        uint8_t best = 0xFF;
+        uint32_t len = 0;
+
+        for (i = 0; i < MOD_MAX_SAMPLES; ++i) {
+            if (!done[i] && info->sample[i].length > len) {
+                len = info->sample[i].length;
+                best = i;
+            }
         }
-        if (next + len > limit) {
+        if (best == 0xFF) {
+            break;
+        }
+        for (r = 0; r < num_regions; ++r) {
+            if (next[r] + len <= regions[r].end) {
+                address[best] = next[r];
+                next[r] += len;
+                break;
+            }
+        }
+        if (r == num_regions) {
             return MOD_ERR_NO_MEMORY;
         }
-        address[i] = next;
-        next += len;
+        done[best] = 1;
     }
     return MOD_OK;
 }
