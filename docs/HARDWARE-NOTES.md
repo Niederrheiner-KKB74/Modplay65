@@ -92,6 +92,14 @@ For an Amiga period `p`: `FREQ ≈ 1469309 / p`.
   jiffy clock) therefore do not work. Modplay65 reads the keyboard through
   `$D610` and will install its own interrupt handlers.
 
+- Observed on Xemu/ROM 920413 (Nov 2026): `printf` through KERNAL CHROUT
+  printed lines out of order, dropped text, did not format `%lu`, and the
+  program then left its key loop by itself. Cause not investigated;
+  Modplay65 avoids KERNAL calls and stdio altogether and writes to screen
+  RAM directly (`src/hw/screen.c`).
+- `main()` returning does not go back to BASIC: the SDK's exit code loops
+  forever.
+
 ## Misc
 
 - `$D02F`: write `$47` then `$53` to enable MEGA65 I/O.

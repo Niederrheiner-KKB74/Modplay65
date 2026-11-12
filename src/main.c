@@ -1,17 +1,21 @@
 /*
  * Modplay65 - MOD and SID player for the MEGA65.
  *
- * Milestone 0 starter: prints system information and offers an audio DMA
+ * Milestone 0 starter: shows system information and offers an audio DMA
  * test tone, so the build, the toolchain and the basic audio path can be
  * checked before the real player is built on top.
+ *
+ * The program uses no KERNAL services: text goes straight to screen RAM
+ * and keys come from the hardware key queue. It does not return to BASIC;
+ * reset the machine to leave.
  */
 #include <stdint.h>
-#include <stdio.h>
 
 #include <mega65/memory.h>
 
 #include "hw/audio_dma.h"
 #include "hw/keyboard.h"
+#include "hw/screen.h"
 
 #ifndef MODPLAY65_VERSION
 #define MODPLAY65_VERSION "dev"
@@ -51,35 +55,39 @@ int main(void)
 {
     uint8_t playing = 0;
     uint8_t key;
+    uint8_t count = 0;
 
     mega65_io_enable();
     audio_dma_init();
+    screen_init();
     keyboard_flush();
 
-    printf("\nModplay65 %s\n", MODPLAY65_VERSION);
-    printf("MOD and SID player for the MEGA65\n\n");
-    printf("Video timing: %s\n", is_ntsc() ? "NTSC" : "PAL");
-    printf("Test tone value: %lu\n\n", (unsigned long)TEST_TONE_FREQ);
-    printf("T = test tone on/off (440 Hz)\n");
-    printf("Q = quit\n");
+    screen_puts(0, 0, "Modplay65 " MODPLAY65_VERSION);
+    screen_puts(0, 1, "MOD and SID player for the MEGA65");
+    screen_puts(0, 3, "Video timing:");
+    screen_puts(18, 3, is_ntsc() ? "NTSC" : "PAL");
+    screen_puts(0, 4, "Tone register: $");
+    screen_hex(18, 4, TEST_TONE_FREQ, 6);
+    screen_puts(0, 6, "T = test tone on/off (440 Hz)");
+    screen_puts(0, 8, "Tone:             off");
+    screen_puts(0, 9, "Last key code:  $--   keys seen: $00");
 
     for (;;) {
-        key = to_lower(keyboard_poll());
-        if (key == 't') {
+        key = keyboard_poll();
+        if (key == 0) {
+            continue;
+        }
+        screen_hex(17, 9, key, 2);
+        screen_hex(34, 9, ++count, 2);
+        if (to_lower(key) == 't') {
             playing = !playing;
             if (playing) {
                 tone_on();
-                printf("Tone on\n");
+                screen_puts(18, 8, "ON ");
             } else {
                 tone_off();
-                printf("Tone off\n");
+                screen_puts(18, 8, "off");
             }
-        } else if (key == 'q') {
-            break;
         }
     }
-
-    audio_dma_shutdown();
-    printf("Bye.\n");
-    return 0;
 }
