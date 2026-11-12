@@ -105,6 +105,13 @@ For an Amiga period `p`: `FREQ ≈ 1469309 / p`.
 
 - `$D06F` bit 7: PALNTSC, set = NTSC timing.
 
+## Timers
+
+- CIA timers count the 1 MHz phi clock, which the core derives separately
+  for PAL and NTSC (`pixel_driver.vhdl`). Xemu instead adds 32 CIA ticks
+  per scan line (about 0.5 MHz), so CIA-based timing runs at the wrong
+  speed there. Modplay65 uses the raster line counter as timebase.
+
 ## Keyboard
 
 - `$D610`: ASCII code of the oldest queued key, 0 if none; write any value

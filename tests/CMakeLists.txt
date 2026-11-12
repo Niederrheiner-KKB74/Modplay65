@@ -12,3 +12,19 @@ add_executable(test_mod_load
 target_include_directories(test_mod_load PRIVATE ../src)
 target_compile_options(test_mod_load PRIVATE -Wall -Wextra -Wshadow)
 add_test(NAME mod_load COMMAND test_mod_load)
+
+add_executable(test_mod_play
+    test_mod_play.c
+    ../src/mod/mod_play.c
+    ../src/mod/mod_tables.c)
+target_include_directories(test_mod_play PRIVATE ../src)
+target_compile_options(test_mod_play PRIVATE -Wall -Wextra -Wshadow)
+add_test(NAME mod_play COMMAND test_mod_play)
+
+# Development aid: trace a MOD file through the engine.
+add_executable(modtrace
+    modtrace.c
+    ../src/mod/mod_load.c
+    ../src/mod/mod_play.c
+    ../src/mod/mod_tables.c)
+target_include_directories(modtrace PRIVATE ../src)

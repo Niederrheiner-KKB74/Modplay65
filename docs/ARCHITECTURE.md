@@ -56,13 +56,16 @@ src/
     audio_dma.[ch]    audio DMA channel registers and helpers       (exists)
     keyboard.h        hardware key queue                            (exists)
     screen.[ch]       direct text output to screen RAM              (exists)
+    timebase.[ch]     tick timing from the raster counter           (exists)
     sid.[ch]          SID chip access, model and mixer setup
     irq.s             interrupt entry/exit, CIA timer setup
     bigmem.[ch]       far memory helpers on top of mega65-libc
   mod/              MOD support (portable)
     mod_load.[ch]     header parsing, sample placement              (exists)
     mod_file.[ch]     SD card loading (MEGA65 only)                 (exists)
-    mod_play.[ch]     replay engine: rows, ticks, effects
+    mod_play.[ch]     replay engine: rows, ticks, effects           (exists)
+    mod_tables.[ch]   period and waveform tables                    (exists)
+    mod_out.[ch]      engine output to audio DMA (MEGA65 only)      (exists)
   sid/              SID support
     psid.[ch]         PSID header parsing (portable)
     sid_host.[ch]     sandbox bank setup, song selection
@@ -137,16 +140,25 @@ register is a 24-bit increment added on every cycle of the 40.5 MHz clock
 FREQ = rate * 2^24 / 40500000  ≈  1469309 / p
 ```
 
-The replayer keeps a lookup table for the standard periods (with finetune)
-and falls back to the hardware divider for slides and vibrato.
+The replayer keeps a period table for all 16 finetune values and computes
+the frequency register with one 32-bit division per change.
 
 ### 6.4 Timing
 
-One tick lasts `2.5 / BPM` seconds (20 ms at the default 125 BPM). A CIA
-timer interrupt drives the tick so that tempo changes (effect `Fxx` ≥ `$20`)
-only reload the timer **[verify CIA clock rate on PAL and NTSC]**.
+One tick lasts `2.5 / BPM` seconds (20 ms at the default 125 BPM).
 
-Per tick, the interrupt handler:
+Current implementation: the main loop polls the VIC raster line counter
+(`$D011/$D012`), adds `lines * BPM` to an accumulator and runs a tick each
+time it passes 2.5 seconds worth of lines (PAL 15625 lines/s, NTSC 15734).
+This needs no interrupts, has about 64 µs resolution and behaves the same
+on hardware and in Xemu. CIA timers were rejected as timebase because
+Xemu does not run them at the hardware rate. The main loop must come back
+to the poll at least once per video frame.
+
+Planned: move the tick into a raster interrupt when screen updates become
+long enough to delay it.
+
+Per tick, the player:
 
 1. on tick 0, reads the next row from the pattern buffer and triggers notes;
 2. on other ticks, applies running effects (slides, vibrato, tremolo,

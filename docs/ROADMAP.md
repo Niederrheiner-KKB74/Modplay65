@@ -35,17 +35,25 @@ built on top of them.
 - [x] Clear error messages for unsupported or oversized modules
 - [x] Show module name, sample list and song length on screen
 - [x] Audition single samples (not planned originally, useful for testing)
-- [ ] Confirm on real hardware (tested in Xemu only so far)
+- [x] Confirmed on real hardware with a 31-instrument file (12 Nov 2026)
 - [ ] Test a 15-instrument file and a file with looped samples
 
 ## M3 - MOD replay engine
 
-- [ ] CIA timer tick interrupt, speed and tempo handling
-- [ ] Notes, sample triggering, volume, loops
-- [ ] Effects in this order: `Cxx` `Fxx` `Bxx` `Dxx`, then `1xx` `2xx` `3xx`
-      `Axy` `5xy`, then `0xy` `4xy` `6xy` `7xy` `9xx`, then the `Exy` set
-- [ ] Host-side reference test: same engine on the PC, compared row by row
-      with a known-good player
+- [x] Tick timing, speed and tempo handling. Driven by polling the raster
+      line counter in the main loop, not by a CIA interrupt (see
+      ARCHITECTURE.md 6.4); 250 rows in 30 s measured in Xemu at 125 BPM
+- [x] Notes, sample triggering, volume, loops
+- [x] All ProTracker effects `0`-`F` and the `Exy` set, except `E0x`
+      (filter), `E3x` (glissando), `EFx` and `8xx`, which are ignored
+- [x] Host unit tests for the engine; `modtrace` tool to run a file
+      through the engine on the PC
+- [ ] Confirm on real hardware by ear
+- [ ] Test with modules that use more effects (the first test file only
+      uses `Fxx`) and looped samples
+- [ ] Host-side reference test against a known-good player
+- [ ] Move the tick into an interrupt once the UI needs longer screen
+      updates
 - [ ] Decide the large-module strategy (ARCHITECTURE.md, open decision 1)
 
 ## M4 - User interface

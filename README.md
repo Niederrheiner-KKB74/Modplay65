@@ -7,8 +7,9 @@ MOD files and SID files, with a graphical user interface and sound
 visualisation.
 
 **Status: early development.** The program can load a 4-channel MOD file
-from the SD card, show its contents and play its samples one at a time. It
-does not play songs yet.
+from the SD card, show its contents, play single samples and play the
+song. The user interface is a plain text screen so far; SID playback and
+the visualisers are not started.
 
 ## Planned features
 

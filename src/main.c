@@ -1,8 +1,8 @@
 /*
  * Modplay65 - MOD and SID player for the MEGA65.
  *
- * Milestone 2: load a MOD file from the SD card, show what is in it and
- * let the user listen to the individual samples.
+ * Milestone 3: load a MOD file from the SD card, show what is in it,
+ * audition single samples and play the song.
  *
  * The program uses no KERNAL services: text goes straight to screen RAM
  * and keys come from the hardware key queue. It does not return to BASIC;
@@ -15,7 +15,10 @@
 #include "hw/audio_dma.h"
 #include "hw/keyboard.h"
 #include "hw/screen.h"
+#include "hw/timebase.h"
 #include "mod/mod_file.h"
+#include "mod/mod_out.h"
+#include "mod/mod_play.h"
 
 #ifndef MODPLAY65_VERSION
 #define MODPLAY65_VERSION "dev"
@@ -39,6 +42,7 @@
 #define STATUS_ROW 24
 
 static struct mod_file mod;
+static struct mod_player player;
 static char filename[32] = "AXELF.MOD";
 
 static uint8_t to_upper(uint8_t c)
@@ -208,6 +212,99 @@ static void play_sample(uint8_t index)
     }
 }
 
+/* Pattern rows are read from the copy of the file in Attic RAM. */
+void mod_read_row(uint8_t pattern, uint8_t row, uint8_t *dst)
+{
+    lcopy(MOD_FILE_ATTIC + mod.info.pattern_offset +
+              (uint32_t)pattern * MOD_PATTERN_BYTES +
+              (uint16_t)row * MOD_ROW_BYTES,
+          (uint32_t)(uintptr_t)dst, MOD_ROW_BYTES);
+}
+
+#define PLAY_ROW 9
+
+static void show_position(void)
+{
+    uint8_t i;
+
+    /* The engine has already moved on to the next row: show what plays. */
+    screen_dec(9, PLAY_ROW, (uint32_t)player.order + 1, 3);
+    screen_dec(30, PLAY_ROW, player.pattern, 3);
+    screen_dec(40, PLAY_ROW, player.row, 2);
+    screen_dec(51, PLAY_ROW, player.speed, 2);
+    screen_dec(60, PLAY_ROW, player.tempo, 3);
+    for (i = 0; i < MOD_CHANNELS; ++i) {
+        const struct mod_channel *c = &player.ch[i];
+        uint8_t y = (uint8_t)(PLAY_ROW + 2 + i);
+        uint8_t bar = (uint8_t)(c->out_period ? c->out_volume >> 1 : 0);
+
+        screen_dec(18, y, c->sample, 2);
+        screen_dec(29, y, c->out_period, 4);
+        screen_dec(42, y, c->out_volume, 2);
+        screen_clear_span(46, y, 33);
+        screen_clear_span(46, y, bar);
+        screen_reverse(46, y, bar, 1);
+    }
+}
+
+/* Play the song from the first position until the user stops it. */
+static void play_song(void)
+{
+    uint8_t key;
+    uint8_t i;
+
+    all_off();
+    screen_clear();
+    screen_puts(0, 0, "Modplay65 " MODPLAY65_VERSION);
+    screen_puts(0, 2, "Title:");
+    screen_puts(10, 2, mod.info.name);
+    screen_puts(0, PLAY_ROW, "Position");
+    screen_puts(13, PLAY_ROW, "of");
+    screen_dec(16, PLAY_ROW, mod.info.song_length, 3);
+    screen_puts(22, PLAY_ROW, "Pattern");
+    screen_puts(36, PLAY_ROW, "Row");
+    screen_puts(45, PLAY_ROW, "Speed");
+    screen_puts(56, PLAY_ROW, "BPM");
+    for (i = 0; i < MOD_CHANNELS; ++i) {
+        uint8_t y = (uint8_t)(PLAY_ROW + 2 + i);
+
+        screen_puts(0, y, "Channel    sample     period      volume");
+        screen_dec(8, y, (uint32_t)i + 1, 1);
+    }
+    status("SPACE = stop   cursor left/right or -/+ = previous/next position");
+
+    mod_player_init(&player, &mod.info, 0);
+    timebase_init();
+    for (;;) {
+        if (timebase_poll(player.tempo)) {
+            mod_player_tick(&player);
+            mod_out_apply(&player, &mod);
+            if (player.row_started) {
+                show_position();
+            }
+        }
+        key = keyboard_poll();
+        if (key == 0) {
+            continue;
+        }
+        if (key == ' ' || key == KEY_RETURN) {
+            break;
+        }
+        if (key == KEY_RIGHT || key == '+' || key == KEY_LEFT || key == '-') {
+            uint8_t order = player.order;
+
+            if (key == KEY_RIGHT || key == '+') {
+                order = (uint8_t)(order + 1 < mod.info.song_length ? order + 1 : 0);
+            } else if (order) {
+                --order;
+            }
+            mod_out_stop();
+            mod_player_init(&player, &mod.info, order);
+        }
+    }
+    mod_out_stop();
+}
+
 /* Returns when the user asks for another file. */
 static void browse_samples(void)
 {
@@ -215,10 +312,11 @@ static void browse_samples(void)
     uint8_t sel = 0;
     uint8_t key;
 
-    show_module();
-    status("Cursor keys or +/- = select   SPACE/RETURN = play   S = stop   N = new file");
-    show_selection(sel, 1);
     for (;;) {
+      show_module();
+      status("P = play song   Cursor or +/- = select sample   SPACE = hear it   S = stop   N = new file");
+      show_selection(sel, 1);
+      for (;;) {
         uint8_t next = sel;
 
         key = to_upper(wait_key());
@@ -241,11 +339,16 @@ static void browse_samples(void)
         case 'N': all_off(); return;
         default: break;
         }
+        if (key == 'P') {
+            play_song();
+            break; /* redraw the sample list */
+        }
         if (next != sel) {
             show_selection(sel, 0);
             sel = next;
             show_selection(sel, 1);
         }
+      }
     }
 }
 
