@@ -1,8 +1,8 @@
 # Modplay65 architecture
 
-Status: draft 2 (12 November 2026). Audio DMA sample playback, looping and
-the left/right mapping are confirmed on real hardware; everything else is
-still untested. Items marked **[verify]** are assumptions that an early
+Status: draft 3 (12 November 2026). MOD loading and song playback work on
+real hardware with one test module; the SID part and the visualisers are
+not started. Items marked **[verify]** are assumptions that an early
 milestone must confirm on Xemu and on a real MEGA65. See [ROADMAP.md](ROADMAP.md) for the
 order of work and [HARDWARE-NOTES.md](HARDWARE-NOTES.md) for register details.
 

@@ -48,7 +48,7 @@ built on top of them.
       (filter), `E3x` (glissando), `EFx` and `8xx`, which are ignored
 - [x] Host unit tests for the engine; `modtrace` tool to run a file
       through the engine on the PC
-- [ ] Confirm on real hardware by ear
+- [x] Confirmed on real hardware by ear with one module (12 Nov 2026)
 - [ ] Test with modules that use more effects (the first test file only
       uses `Fxx`) and looped samples
 - [ ] Host-side reference test against a known-good player
