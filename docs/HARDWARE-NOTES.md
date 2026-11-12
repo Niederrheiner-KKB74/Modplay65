@@ -74,7 +74,7 @@ For an Amiga period `p`: `FREQ ≈ 1469309 / p`.
 - Play once, then loop a tail: start as a looping window from the sample
   start to the loop end, then immediately rewrite the base address to the
   loop start. The base is only read when the playhead wraps. Verified in
-  Xemu; **[verify]** on hardware.
+  Xemu and confirmed by ear on real hardware (12 Nov 2026).
 - Looped 32-byte sine sample confirmed audible on real hardware
   (12 Nov 2026), both sides.
 
