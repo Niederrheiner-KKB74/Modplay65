@@ -82,3 +82,35 @@ void screen_hex(uint8_t x, uint8_t y, uint32_t value, uint8_t digits)
         value >>= 4;
     }
 }
+
+void screen_dec(uint8_t x, uint8_t y, uint32_t value, uint8_t width)
+{
+    uint8_t *p = cell(x, y) + width;
+
+    do {
+        *--p = (uint8_t)('0' + (uint8_t)(value % 10));
+        value /= 10;
+    } while (--width && value);
+    while (width--) {
+        *--p = 0x20;
+    }
+}
+
+void screen_clear_span(uint8_t x, uint8_t y, uint8_t len)
+{
+    uint8_t *p = cell(x, y);
+
+    while (len--) {
+        *p++ = 0x20;
+    }
+}
+
+void screen_reverse(uint8_t x, uint8_t y, uint8_t len, uint8_t on)
+{
+    uint8_t *p = cell(x, y);
+
+    while (len--) {
+        *p = on ? (uint8_t)(*p | 0x80) : (uint8_t)(*p & 0x7F);
+        ++p;
+    }
+}

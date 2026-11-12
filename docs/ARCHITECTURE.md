@@ -54,11 +54,14 @@ src/
   main.c            program entry, main loop                       (exists)
   hw/               hardware layer                                  (exists)
     audio_dma.[ch]    audio DMA channel registers and helpers       (exists)
+    keyboard.h        hardware key queue                            (exists)
+    screen.[ch]       direct text output to screen RAM              (exists)
     sid.[ch]          SID chip access, model and mixer setup
     irq.s             interrupt entry/exit, CIA timer setup
     bigmem.[ch]       far memory helpers on top of mega65-libc
   mod/              MOD support (portable)
-    mod_load.[ch]     header and sample table parsing
+    mod_load.[ch]     header parsing, sample placement              (exists)
+    mod_file.[ch]     SD card loading (MEGA65 only)                 (exists)
     mod_play.[ch]     replay engine: rows, ticks, effects
   sid/              SID support
     psid.[ch]         PSID header parsing (portable)
@@ -66,7 +69,7 @@ src/
     sid_tramp.s       trampoline that calls init/play in the sandbox
   ui/               screen layout, file browser, input handling
   vis/              visualisers
-tests/              host-side unit tests for the portable code
+tests/              host-side unit tests for the portable code      (exists)
 tools/              helper scripts (disk image creation, test data)
 docs/               this documentation
 ```
@@ -109,8 +112,11 @@ Consequences for MOD playback:
 - Supported at first: 31-instrument, 4-channel modules (`M.K.`, `M!K!`,
   `FLT4`, `4CHN`) and old 15-instrument Soundtracker files (no signature).
 - 6- and 8-channel variants are out of scope; the hardware has four channels.
-- The loader reads the file in 512-byte blocks, parses the 1084-byte header
-  in bank 0, then streams patterns to Attic RAM and samples to chip RAM.
+- The loader reads the whole file in 512-byte blocks into Attic RAM at
+  `$8000000`, parses the 1084-byte header in bank 0 and copies the samples
+  from Attic RAM to chip RAM. Patterns are read from the Attic copy.
+- Sample placement: first fit in banks 4-5; a sample never crosses a 64 KB
+  boundary and never ends on the last byte of a bank.
 
 ### 6.2 Channel mapping
 

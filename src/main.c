@@ -1,8 +1,8 @@
 /*
  * Modplay65 - MOD and SID player for the MEGA65.
  *
- * Milestone 1 test bench for audio DMA sample playback: steady tone,
- * one-shot sample, sample with a looped tail, and single-side output.
+ * Milestone 2: load a MOD file from the SD card, show what is in it and
+ * let the user listen to the individual samples.
  *
  * The program uses no KERNAL services: text goes straight to screen RAM
  * and keys come from the hardware key queue. It does not return to BASIC;
@@ -15,73 +15,51 @@
 #include "hw/audio_dma.h"
 #include "hw/keyboard.h"
 #include "hw/screen.h"
+#include "mod/mod_file.h"
 
 #ifndef MODPLAY65_VERSION
 #define MODPLAY65_VERSION "dev"
 #endif
 
-/* Sample rate of all test sounds. A 32-byte cycle gives 440 Hz. */
-#define TEST_FREQ AUDIO_DMA_FREQ(14080)
-#define TEST_VOLUME 0x60
+/* ASCII codes delivered by the hardware key queue. */
+#define KEY_RETURN 0x0D
+#define KEY_DELETE 0x14
+#define KEY_DOWN 0x11
+#define KEY_UP 0x91
+#define KEY_RIGHT 0x1D
+#define KEY_LEFT 0x9D
 
-/*
- * Test sample in free chip RAM (bank 4):
- *   $040000-$041FFF  "blip": 880 Hz (16-byte cycle) fading out, 0.58 s
- *   $042000-$04201F  one 440 Hz sine cycle, used as loop
- */
-#define BLIP_ADDR 0x040000UL
-#define BLIP_LEN 8192U
-#define LOOP_ADDR 0x042000UL
-#define LOOP_LEN 32U
+/* Samples are auditioned at the pitch of note C-2 (Amiga period 428). */
+#define AUDITION_FREQ AUDIO_DMA_FREQ(8287)
 
-static const int8_t sine32[32] = {
-    0, 25, 49, 71, 90, 106, 117, 125, 127, 125, 117, 106, 90, 71, 49, 25,
-    0, -25, -49, -71, -90, -106, -117, -125, -127, -125, -117, -106, -90,
-    -71, -49, -25
-};
+#define LIST_ROW 7
+#define LIST_ROWS 16
+#define COLUMN_WIDTH 40
+#define ENTRY_WIDTH 37
+#define STATUS_ROW 24
 
-static uint8_t chunk[256];
+static struct mod_file mod;
+static char filename[32] = "AXELF.MOD";
 
-static void build_samples(void)
+static uint8_t to_upper(uint8_t c)
 {
-    uint16_t i;
-
-    for (i = 0; i < BLIP_LEN; ++i) {
-        /* every second table entry = 16-byte cycle; linear fade 127..0 */
-        int16_t v = (int16_t)sine32[(i << 1) & 31];
-        int16_t amp = (int16_t)((BLIP_LEN - 1 - i) >> 6);
-
-        chunk[(uint8_t)i] = (uint8_t)((v * amp) >> 7);
-        if ((uint8_t)i == 0xFF) {
-            lcopy((uint32_t)(uintptr_t)chunk, BLIP_ADDR + (i & 0xFF00U), 256);
-        }
-    }
-    lcopy((uint32_t)(uintptr_t)sine32, LOOP_ADDR, LOOP_LEN);
+    return (c >= 'a' && c <= 'z') ? (uint8_t)(c - 0x20) : c;
 }
 
-static uint8_t to_lower(uint8_t c)
+static uint8_t wait_key(void)
 {
-    return (c >= 'A' && c <= 'Z') ? (uint8_t)(c | 0x20) : c;
+    uint8_t key;
+
+    do {
+        key = keyboard_poll();
+    } while (key == 0);
+    return key;
 }
 
-/* SID register blocks: $D400 (SID 1) and $D440 (SID 3). */
-#define SID_REG(base, n) (*(volatile uint8_t *)((base) + (n)))
-
-static void sid_off(void)
+static void status(const char *text)
 {
-    SID_REG(0xD400U, 4) = 0;
-    SID_REG(0xD440U, 4) = 0;
-}
-
-/* 440 Hz triangle on voice 1 of the SID at base. */
-static void sid_tone(uint16_t base)
-{
-    SID_REG(base, 24) = 0x0F; /* volume */
-    SID_REG(base, 0) = 0x45;  /* frequency $1D45 = 440 Hz (PAL clock) */
-    SID_REG(base, 1) = 0x1D;
-    SID_REG(base, 5) = 0x00;  /* attack/decay */
-    SID_REG(base, 6) = 0xF0;  /* sustain/release */
-    SID_REG(base, 4) = 0x11;  /* triangle + gate */
+    screen_clear_span(0, STATUS_ROW, 79);
+    screen_puts(0, STATUS_ROW, text);
 }
 
 static void all_off(void)
@@ -91,88 +69,210 @@ static void all_off(void)
     for (ch = 0; ch < AUDIO_DMA_CHANNELS; ++ch) {
         audio_dma_stop(ch);
     }
-    sid_off();
 }
 
-/* channels: bit n = DMA channel n */
-static void start(uint8_t channels, uint8_t mode)
+/* Edit the file name on the given row. */
+static void input_filename(uint8_t row)
 {
-    uint8_t ch;
+    uint8_t len = 0;
+    uint8_t key;
 
-    all_off();
-    for (ch = 0; ch < AUDIO_DMA_CHANNELS; ++ch) {
-        if (!(channels & (1 << ch))) {
-            continue;
+    while (filename[len]) {
+        ++len;
+    }
+    screen_puts(0, row, "File on SD card:");
+    for (;;) {
+        screen_clear_span(17, row, sizeof(filename) + 1);
+        screen_puts(17, row, filename);
+        screen_reverse((uint8_t)(17 + len), row, 1, 1);
+        key = wait_key();
+        if (key == KEY_RETURN && len) {
+            break;
         }
-        audio_dma_set_volume(ch, TEST_VOLUME, 0);
-        if (mode == 0) {
-            audio_dma_play(ch, LOOP_ADDR, LOOP_LEN, TEST_FREQ, 1);
-        } else if (mode == 1) {
-            audio_dma_play(ch, BLIP_ADDR, BLIP_LEN, TEST_FREQ, 0);
-        } else {
-            audio_dma_play_looped(ch, BLIP_ADDR, LOOP_ADDR,
-                                  LOOP_ADDR + LOOP_LEN, TEST_FREQ);
+        if (key == KEY_DELETE && len) {
+            filename[--len] = 0;
+        } else if (key > ' ' && key < 0x7F && len < sizeof(filename) - 1) {
+            filename[len++] = (char)to_upper(key);
+            filename[len] = 0;
+        }
+    }
+    screen_reverse((uint8_t)(17 + len), row, 1, 0);
+}
+
+static void show_progress(uint32_t bytes)
+{
+    screen_dec(8, STATUS_ROW, bytes, 8);
+}
+
+static uint8_t entry_x(uint8_t index)
+{
+    return index < LIST_ROWS ? 0 : COLUMN_WIDTH;
+}
+
+static uint8_t entry_y(uint8_t index)
+{
+    return (uint8_t)(LIST_ROW + (index < LIST_ROWS ? index : index - LIST_ROWS));
+}
+
+static void show_module(void)
+{
+    const struct mod_info *info = &mod.info;
+    uint8_t i;
+
+    screen_clear();
+    screen_puts(0, 0, "Modplay65 " MODPLAY65_VERSION);
+    screen_puts(0, 2, "Title:");
+    screen_puts(10, 2, info->name);
+    screen_puts(40, 2, "File:");
+    screen_puts(50, 2, filename);
+    screen_puts(0, 3, "Format:");
+    screen_puts(10, 3, info->signature[0] ? info->signature : "old (15)");
+    screen_puts(40, 3, "Size:");
+    screen_dec(50, 3, mod.size, 7);
+    screen_puts(58, 3, "bytes");
+    screen_puts(0, 4, "Length:");
+    screen_dec(10, 4, info->song_length, 3);
+    screen_puts(14, 4, "positions");
+    screen_dec(25, 4, info->num_patterns, 3);
+    screen_puts(29, 4, "patterns");
+    screen_puts(40, 4, "Samples:");
+    screen_dec(50, 4, info->sample_bytes, 7);
+    screen_puts(58, 4, "bytes");
+
+    screen_puts(0, 6, "No Name                   Length Vol L");
+    screen_puts(COLUMN_WIDTH, 6, "No Name                   Length Vol L");
+    for (i = 0; i < info->num_samples; ++i) {
+        const struct mod_sample *s = &info->sample[i];
+        uint8_t x = entry_x(i);
+        uint8_t y = entry_y(i);
+
+        screen_dec(x, y, (uint32_t)i + 1, 2);
+        screen_puts((uint8_t)(x + 3), y, s->name);
+        if (s->length) {
+            screen_dec((uint8_t)(x + 26), y, s->length, 6);
+            screen_dec((uint8_t)(x + 33), y, s->volume, 3);
+            if (s->loop_length) {
+                screen_puts((uint8_t)(x + 37), y, "*");
+            }
         }
     }
 }
 
-static void show_channel(uint8_t row, uint8_t ch)
+static void show_selection(uint8_t index, uint8_t on)
 {
-    screen_hex(13, row, AUDIO_DMA_CH[ch].ctrl, 2);
-    screen_hex(27, row, audio_dma_position(ch), 6);
+    const struct mod_sample *s = &mod.info.sample[index];
+
+    screen_reverse(entry_x(index), entry_y(index), ENTRY_WIDTH, on);
+    if (!on) {
+        return;
+    }
+    screen_clear_span(0, STATUS_ROW - 1, 79);
+    screen_puts(0, STATUS_ROW - 1, "Sample    at $       loop           finetune");
+    screen_dec(7, STATUS_ROW - 1, (uint32_t)index + 1, 2);
+    screen_hex(14, STATUS_ROW - 1, mod.sample_addr[index], 6);
+    if (s->loop_length) {
+        screen_dec(26, STATUS_ROW - 1, s->loop_start, 5);
+        screen_puts(31, STATUS_ROW - 1, "+");
+        screen_dec(32, STATUS_ROW - 1, s->loop_length, 5);
+    } else {
+        screen_puts(26, STATUS_ROW - 1, "none");
+    }
+    if (s->finetune < 0) {
+        screen_puts(46, STATUS_ROW - 1, "-");
+        screen_dec(47, STATUS_ROW - 1, (uint32_t)(-s->finetune), 1);
+    } else {
+        screen_dec(46, STATUS_ROW - 1, (uint32_t)s->finetune, 2);
+    }
+}
+
+static void play_sample(uint8_t index)
+{
+    const struct mod_sample *s = &mod.info.sample[index];
+    uint32_t addr = mod.sample_addr[index];
+    uint8_t ch;
+
+    all_off();
+    if (s->length == 0) {
+        return;
+    }
+    /* one channel per side */
+    for (ch = 0; ch < AUDIO_DMA_CHANNELS; ch += 2) {
+        audio_dma_set_volume(ch, (uint8_t)(s->volume * 2), 0);
+        if (s->loop_length) {
+            audio_dma_play_looped(ch, addr, addr + s->loop_start,
+                                  addr + s->loop_start + s->loop_length,
+                                  AUDITION_FREQ);
+        } else {
+            audio_dma_play(ch, addr, (uint16_t)s->length, AUDITION_FREQ, 0);
+        }
+    }
+}
+
+/* Returns when the user asks for another file. */
+static void browse_samples(void)
+{
+    uint8_t count = mod.info.num_samples;
+    uint8_t sel = 0;
+    uint8_t key;
+
+    show_module();
+    status("Cursor keys or +/- = select   SPACE/RETURN = play   S = stop   N = new file");
+    show_selection(sel, 1);
+    for (;;) {
+        uint8_t next = sel;
+
+        key = to_upper(wait_key());
+        switch (key) {
+        case '+':
+        case KEY_DOWN: next = (uint8_t)(sel + 1 < count ? sel + 1 : 0); break;
+        case '-':
+        case KEY_UP: next = (uint8_t)(sel ? sel - 1 : count - 1); break;
+        case KEY_RIGHT:
+        case KEY_LEFT:
+            if (sel >= LIST_ROWS) {
+                next = (uint8_t)(sel - LIST_ROWS);
+            } else if (sel + LIST_ROWS < count) {
+                next = (uint8_t)(sel + LIST_ROWS);
+            }
+            break;
+        case ' ':
+        case KEY_RETURN: play_sample(sel); break;
+        case 'S': all_off(); break;
+        case 'N': all_off(); return;
+        default: break;
+        }
+        if (next != sel) {
+            show_selection(sel, 0);
+            sel = next;
+            show_selection(sel, 1);
+        }
+    }
 }
 
 int main(void)
 {
-    uint8_t key;
+    enum mod_file_error err;
 
     mega65_io_enable();
     audio_dma_init();
     screen_init();
-    screen_puts(0, 0, "Modplay65 " MODPLAY65_VERSION " - audio DMA test bench");
-    screen_puts(0, 2, "Preparing samples ...");
-    build_samples();
     keyboard_flush();
 
-    screen_puts(0, 2, "T = steady 440 Hz tone, both sides");
-    screen_puts(0, 3, "1 = one-shot: fading high tone, must stop by itself");
-    screen_puts(0, 4, "2 = fading high tone, then steady low tone (loop)");
-    screen_puts(0, 5, "A B C D = steady tone on DMA channel 0 1 2 3 only");
-    screen_puts(0, 6, "L = SID 1 ($D400) tone    R = SID 3 ($D440) tone");
-    screen_puts(0, 7, "SPACE = all off");
-    screen_puts(0, 9, "Last action:  -");
-    screen_puts(0, 11, "Ch0 control $--  position $------");
-    screen_puts(0, 12, "Ch1 control $--  position $------");
-    screen_puts(0, 13, "Ch2 control $--  position $------");
-    screen_puts(0, 14, "Ch3 control $--  position $------");
-    screen_puts(0, 16, "D711 $--  D712 $--  D71C-F $-- -- -- --");
-
     for (;;) {
-        show_channel(11, 0);
-        show_channel(12, 1);
-        show_channel(13, 2);
-        show_channel(14, 3);
-        screen_hex(6, 16, PEEK(0xD711U), 2);
-        screen_hex(16, 16, PEEK(0xD712U), 2);
-        screen_hex(28, 16, PEEK(0xD71CU), 2);
-        screen_hex(31, 16, PEEK(0xD71DU), 2);
-        screen_hex(34, 16, PEEK(0xD71EU), 2);
-        screen_hex(37, 16, PEEK(0xD71FU), 2);
-        key = to_lower(keyboard_poll());
-        switch (key) {
-        case 't': start(5, 0); screen_puts(14, 9, "T steady   "); break;
-        case '1': start(5, 1); screen_puts(14, 9, "1 one-shot "); break;
-        case '2': start(5, 2); screen_puts(14, 9, "2 loop tail"); break;
-        case 'a': start(1, 0); screen_puts(14, 9, "A channel 0"); break;
-        case 'b': start(2, 0); screen_puts(14, 9, "B channel 1"); break;
-        case 'c': start(4, 0); screen_puts(14, 9, "C channel 2"); break;
-        case 'd': start(8, 0); screen_puts(14, 9, "D channel 3"); break;
-        case 'l': all_off(); sid_tone(0xD400U);
-                  screen_puts(14, 9, "L SID 1    "); break;
-        case 'r': all_off(); sid_tone(0xD440U);
-                  screen_puts(14, 9, "R SID 3    "); break;
-        case ' ': all_off();   screen_puts(14, 9, "off        "); break;
-        default: break;
+        screen_clear();
+        screen_puts(0, 0, "Modplay65 " MODPLAY65_VERSION " - MOD loader");
+        screen_puts(0, 4, "Type the name of a MOD file in the root directory");
+        screen_puts(0, 5, "of the SD card (8.3 name) and press RETURN.");
+        for (;;) {
+            input_filename(2);
+            status("Loading          bytes");
+            err = mod_file_load(filename, &mod, show_progress);
+            if (err == MOD_FILE_OK) {
+                break;
+            }
+            status("Error: ");
+            screen_puts(7, STATUS_ROW, mod_file_error_text(err));
         }
+        browse_samples();
     }
 }

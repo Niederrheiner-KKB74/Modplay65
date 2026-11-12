@@ -24,4 +24,13 @@ void screen_puts(uint8_t x, uint8_t y, const char *s);
 /* Write value as hex with the given number of digits (1-8). */
 void screen_hex(uint8_t x, uint8_t y, uint32_t value, uint8_t digits);
 
+/* Write value as decimal, right-aligned in width characters. */
+void screen_dec(uint8_t x, uint8_t y, uint32_t value, uint8_t width);
+
+/* Fill len characters from column x, row y with spaces. */
+void screen_clear_span(uint8_t x, uint8_t y, uint8_t len);
+
+/* Show len characters from column x, row y reversed (on != 0) or normal. */
+void screen_reverse(uint8_t x, uint8_t y, uint8_t len, uint8_t on);
+
 #endif

@@ -17,6 +17,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Host unit tests
+        run: |
+          cmake -S tests -B build-tests
+          cmake --build build-tests
+          ctest --test-dir build-tests --output-on-failure
+
       - name: Install llvm-mos SDK
         run: |
           wget -q "https://github.com/llvm-mos/llvm-mos-sdk/releases/download/${LLVM_MOS_SDK_VERSION}/llvm-mos-linux.tar.xz"

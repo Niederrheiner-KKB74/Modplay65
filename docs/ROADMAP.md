@@ -29,11 +29,14 @@ built on top of them.
 
 ## M2 - MOD loader
 
-- [ ] Portable header and sample table parser with host unit tests
-- [ ] SD card file reading in 512-byte blocks
-- [ ] Patterns to Attic RAM, samples to chip RAM
-- [ ] Clear error messages for unsupported or oversized modules
-- [ ] Show module name, sample list and song length on screen
+- [x] Portable header and sample table parser with host unit tests
+- [x] SD card file reading in 512-byte blocks
+- [x] Whole file to Attic RAM (patterns stay there), samples to chip RAM
+- [x] Clear error messages for unsupported or oversized modules
+- [x] Show module name, sample list and song length on screen
+- [x] Audition single samples (not planned originally, useful for testing)
+- [ ] Confirm on real hardware (tested in Xemu only so far)
+- [ ] Test a 15-instrument file and a file with looped samples
 
 ## M3 - MOD replay engine
 

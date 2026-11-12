@@ -6,9 +6,9 @@ A music player for the [MEGA65](https://mega65.org) that plays ProTracker
 MOD files and SID files, with a graphical user interface and sound
 visualisation.
 
-**Status: early development.** The repository currently contains the project
-plan, the build setup and a starter program that prints system information
-and plays a test tone. It does not play music files yet.
+**Status: early development.** The program can load a 4-channel MOD file
+from the SD card, show its contents and play its samples one at a time. It
+does not play songs yet.
 
 ## Planned features
 
@@ -45,6 +45,13 @@ cmake --build build
 
 The result is `build/modplay65.prg`.
 
+Unit tests for the portable code run on the PC:
+
+```sh
+cmake -S tests -B build-tests && cmake --build build-tests
+ctest --test-dir build-tests --output-on-failure
+```
+
 Every push is also built by GitHub Actions; the PRG can be downloaded from
 the run's artifacts.
 
@@ -64,6 +71,8 @@ it over the serial/JTAG link with the `m65` tool from mega65-tools.
 ```
 src/        program source (C and assembly)
 src/hw/     hardware access layer
+src/mod/    MOD loading
+tests/      host-side unit tests
 docs/       architecture, roadmap, hardware notes
 ```
 
