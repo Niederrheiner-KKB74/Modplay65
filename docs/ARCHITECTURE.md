@@ -114,7 +114,8 @@ Consequences for MOD playback:
 ### 6.2 Channel mapping
 
 Amiga channels 0 and 3 are left, 1 and 2 are right. MEGA65 audio DMA
-channels 0-1 feed one side and 2-3 the other, each with a cross-feed volume
+channels 0-1 play left and 2-3 play right (confirmed on hardware), each
+with a cross-feed volume
 register (`$D71C-$D71F`). Mapping: Amiga 0 → DMA 0, Amiga 3 → DMA 1,
 Amiga 1 → DMA 2, Amiga 2 → DMA 3. The cross-feed registers give an
 adjustable stereo separation, which is a user setting.
@@ -203,8 +204,9 @@ while mapped, and whether the CPU should drop to 1 MHz during the call.
 ### 7.4 Sound routing
 
 The MEGA65 has four SIDs: `$D400` and `$D420` on one side, `$D440` and
-`$D460` on the other. A normal one-SID tune would come out of one side only,
-so the audio mixer (`$D6F4/$D6F5`) is set to centre it **[verify]**.
+`$D460` on the other. SID 1 was heard on the left only in a hardware test, so a normal one-SID
+tune would come out of one side only;
+the audio mixer (`$D6F4/$D6F5`) is set to centre it **[verify]**.
 
 ## 8. User interface
 

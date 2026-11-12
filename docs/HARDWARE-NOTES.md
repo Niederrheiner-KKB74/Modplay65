@@ -15,11 +15,11 @@ Four channels, 16 register bytes each.
 | 2 | `$D740` | B | `$D71E` (CH2LVOL) |
 | 3 | `$D750` | B | `$D71F` (CH3LVOL) |
 
-In the core source (`gs4510.vhdl`), left = ch0 + ch1 + cross-feed of ch2/3
-and right = ch2 + ch3 + cross-feed of ch0/1, before `$D712` bit 1 (swap)
-and the audio mixer. **Open:** on the first hardware test (12 Nov 2026)
-channel 0 alone and channel 2 alone were both heard on the right. Not yet
-explained; the test bench has per-channel and SID keys to narrow it down.
+Side A is left, side B is right: channels 0 and 1 play left, channels 2
+and 3 play right. This follows from the core source (`gs4510.vhdl`: left =
+ch0 + ch1 + cross-feed of ch2/3, right = ch2 + ch3 + cross-feed of ch0/1)
+and was confirmed by ear on real hardware with each channel played alone
+(12 Nov 2026). SID 1 (`$D400`) was heard left, SID 3 (`$D440`) right.
 
 ### Per-channel registers (offset from channel base)
 

@@ -22,7 +22,9 @@ built on top of them.
 - [ ] Confirm the frequency formula by measuring a known tone
 - [x] Work out the register sequence for "play once, then loop a sub-range"
       (test bench key 2; Xemu and real hardware, 12 Nov 2026)
-- [ ] Confirm the memory limits (384 KB, 64 KB window) and which side is left
+- [x] Which side is left: DMA channels 0/1 left, 2/3 right (hardware,
+      12 Nov 2026)
+- [ ] Confirm the memory limits (384 KB, 64 KB window)
 - [ ] Record the findings in HARDWARE-NOTES.md
 
 ## M2 - MOD loader
