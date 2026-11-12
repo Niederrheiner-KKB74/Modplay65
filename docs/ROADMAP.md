@@ -14,7 +14,9 @@ built on top of them.
 
 ## M1 - Audio DMA spike
 
-- [ ] Confirm the test tone on Xemu and on real hardware
+- [x] Starter program runs in Xemu: screen, keys, looped sample playback
+      (registers and playhead checked; sound not yet confirmed by ear)
+- [ ] Confirm the test tone by ear on Xemu and on real hardware
 - [ ] Play one raw 8-bit sample from bank 4, one-shot and looped
 - [ ] Confirm the frequency formula by measuring a known tone
 - [ ] Work out the register sequence for "play once, then loop a sub-range"

@@ -21,9 +21,17 @@
 #define MODPLAY65_VERSION "dev"
 #endif
 
-/* The built-in sine wave has 32 samples per cycle: 440 Hz * 32 = 14080 Hz. */
+/* One sine cycle of 32 samples: 440 Hz * 32 = 14080 Hz sample rate. */
 #define TEST_TONE_FREQ AUDIO_DMA_FREQ(14080)
 #define TEST_TONE_VOLUME 0x60
+#define TEST_TONE_ADDR 0x040000UL /* free chip RAM, bank 4 */
+#define TEST_TONE_LEN 32
+
+static const int8_t sine_table[TEST_TONE_LEN] = {
+    0, 25, 49, 71, 90, 106, 117, 125, 127, 125, 117, 106, 90, 71, 49, 25,
+    0, -25, -49, -71, -90, -106, -117, -125, -127, -125, -117, -106, -90,
+    -71, -49, -25
+};
 
 /* Fold ASCII letters to lower case so shifted keys work too. */
 static uint8_t to_lower(uint8_t c)
@@ -41,8 +49,8 @@ static void tone_on(void)
     /* Channel 0 and channel 2 feed opposite sides: tone on both. */
     audio_dma_set_volume(0, TEST_TONE_VOLUME, 0);
     audio_dma_set_volume(2, TEST_TONE_VOLUME, 0);
-    audio_dma_sine(0, TEST_TONE_FREQ);
-    audio_dma_sine(2, TEST_TONE_FREQ);
+    audio_dma_play(0, TEST_TONE_ADDR, TEST_TONE_LEN, TEST_TONE_FREQ, 1);
+    audio_dma_play(2, TEST_TONE_ADDR, TEST_TONE_LEN, TEST_TONE_FREQ, 1);
 }
 
 static void tone_off(void)
@@ -60,6 +68,7 @@ int main(void)
     mega65_io_enable();
     audio_dma_init();
     screen_init();
+    lcopy((uint32_t)(uintptr_t)sine_table, TEST_TONE_ADDR, TEST_TONE_LEN);
     keyboard_flush();
 
     screen_puts(0, 0, "Modplay65 " MODPLAY65_VERSION);

@@ -56,6 +56,16 @@ For an Amiga period `p`: `FREQ ≈ 1469309 / p`.
   article, see ARCHITECTURE.md).
 - One playback window is at most 64 KB because the top address is 16 bits.
 
+### Xemu behaviour (checked in the Xemu source, Nov 2026)
+
+- Xemu does not emulate the built-in sine wave (control bit 4): it plays
+  the RAM window instead. The test tone therefore uses a real 32-byte sine
+  sample in bank 4.
+- Xemu restarts a looping channel at the base address when the low 16 bits
+  of the playhead equal the top address.
+- Verified in Xemu: with a looped 32-byte sample at `$040000` the playhead
+  (`+A..+C`) stays inside `$040000-$04001F`.
+
 ## SID
 
 | Chip | Address |
@@ -94,7 +104,8 @@ For an Amiga period `p`: `FREQ ≈ 1469309 / p`.
 
 - Observed on Xemu/ROM 920413 (Nov 2026): `printf` through KERNAL CHROUT
   printed lines out of order, dropped text, did not format `%lu`, and the
-  program then left its key loop by itself. Cause not investigated;
+  program then left its key loop by itself. Reproduced in a headless Xemu
+  run with the same ROM. Cause not investigated;
   Modplay65 avoids KERNAL calls and stdio altogether and writes to screen
   RAM directly (`src/hw/screen.c`).
 - `main()` returning does not go back to BASIC: the SDK's exit code loops

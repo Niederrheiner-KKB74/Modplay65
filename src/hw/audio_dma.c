@@ -67,3 +67,22 @@ void audio_dma_sine(uint8_t channel, uint32_t freq)
     c->ctrl = AUDIO_DMA_CTRL_ENABLE | AUDIO_DMA_CTRL_LOOP |
               AUDIO_DMA_CTRL_SINE | AUDIO_DMA_CTRL_8BIT;
 }
+
+void audio_dma_play(uint8_t channel, uint32_t address, uint16_t length,
+                    uint32_t freq, uint8_t loop)
+{
+    volatile struct audio_dma_channel *c = &AUDIO_DMA_CH[channel];
+    uint16_t top = (uint16_t)address + length;
+
+    c->ctrl = 0;
+    audio_dma_set_base(channel, address);
+    c->top[0] = (uint8_t)top;
+    c->top[1] = (uint8_t)(top >> 8);
+    /* Writing the base does not move the playhead: set it as well. */
+    c->cur[0] = (uint8_t)address;
+    c->cur[1] = (uint8_t)(address >> 8);
+    c->cur[2] = (uint8_t)(address >> 16);
+    audio_dma_set_freq(channel, freq);
+    c->ctrl = (uint8_t)(AUDIO_DMA_CTRL_ENABLE | AUDIO_DMA_CTRL_8BIT |
+                        (loop ? AUDIO_DMA_CTRL_LOOP : 0));
+}

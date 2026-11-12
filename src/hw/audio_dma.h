@@ -71,9 +71,19 @@ void audio_dma_set_base(uint8_t channel, uint32_t address);
 void audio_dma_set_volume(uint8_t channel, uint8_t volume, uint8_t crossfeed);
 
 /*
+ * Play 8-bit signed sample data from chip RAM.
+ * address: 24-bit start address; length: bytes, the window must not cross
+ * a 64 KB bank boundary; freq: frequency register value for the sample
+ * rate; loop: non-zero repeats the whole window.
+ */
+void audio_dma_play(uint8_t channel, uint32_t address, uint16_t length,
+                    uint32_t freq, uint8_t loop);
+
+/*
  * Start the built-in 32-sample sine wave on a channel.
  * freq is a frequency register value for the sample rate, which is
  * 32 times the audible pitch: use AUDIO_DMA_FREQ(pitch_hz * 32).
+ * Not emulated by Xemu (it plays the RAM window instead).
  */
 void audio_dma_sine(uint8_t channel, uint32_t freq);
 
