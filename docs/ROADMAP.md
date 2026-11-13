@@ -73,8 +73,11 @@ built on top of them.
 - [x] Automatic advance to the next file when a song ends
 - [ ] Confirm on real hardware (tested in Xemu: browsing, loading, pause,
       seeking, settings, auto-advance)
-- [ ] Sub-directories and long file names: untested, Xemu's virtual SD
-      card only offers 8.3 names in one directory
+- [x] Sub-directories: entering, `..` and loading inside a directory work
+      in Xemu with a FAT32 test image (first version showed none, because
+      the library's readdir returns the wrong attribute byte)
+- [ ] Long file names: untested (the test image's long names were not
+      picked up by the hypervisor)
 - [ ] Custom character set
 - [ ] More than 100 directory entries
 

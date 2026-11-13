@@ -6,6 +6,18 @@
 #include <mega65/dirent.h>
 #include <mega65/fileio.h>
 
+/*
+ * The hypervisor writes its directory entry to page $0400 (the library's
+ * readdir asks for that page):
+ *   $00-$3F long file name, $40 its length, $41-$4D 8.3 name,
+ *   $4E-$51 start cluster, $52-$55 file length, $56 FAT attributes.
+ * The library's own copy has the attribute byte off by one (it returns
+ * the top byte of the file length), so the raw entry is used here.
+ */
+#define RAW_DIRENT ((const uint8_t *)0x0400)
+#define RAW_NAME_LEN 0x40
+#define RAW_ATTR 0x56
+
 #define FAT_ATTR_VOLUME 0x08
 #define FAT_ATTR_DIR 0x10
 #define FAT_ATTR_HIDDEN 0x02
@@ -75,30 +87,39 @@ uint8_t dir_read(void)
         return 0;
     }
     while (dir_count < DIR_MAX_ENTRIES && ++guard < 2000) {
-        struct m65_dirent *e = readdir(fd);
+        const char *name = (const char *)RAW_DIRENT;
+        uint8_t len;
         uint8_t attr;
         struct dir_entry *out;
 
-        if (e == 0 || e->d_name[0] == 0) {
+        if (readdir(fd) == 0) {
             break;
         }
-        attr = (uint8_t)e->d_type;
+        len = RAW_DIRENT[RAW_NAME_LEN];
+        attr = RAW_DIRENT[RAW_ATTR];
+        if (len == 0) {
+            break;
+        }
+        if (len > DIR_NAME_LEN) {
+            len = DIR_NAME_LEN;
+        }
         if (attr & (FAT_ATTR_VOLUME | FAT_ATTR_HIDDEN)) {
             continue;
         }
-        if (attr & FAT_ATTR_DIR) {
-            if (e->d_name[0] == '.' && e->d_name[1] == 0) {
+        out = &dir_entries[dir_count];
+        for (i = 0; i < len; ++i) {
+            out->name[i] = name[i];
+        }
+        out->name[len] = 0;
+        out->is_dir = (uint8_t)((attr & FAT_ATTR_DIR) != 0);
+        if (out->is_dir) {
+            if (out->name[0] == '.' && out->name[1] == 0) {
                 continue;
             }
-        } else if (!dir_is_mod(e->d_name)) {
+        } else if (!dir_is_mod(out->name)) {
             continue;
         }
-        out = &dir_entries[dir_count++];
-        for (i = 0; i < DIR_NAME_LEN && e->d_name[i]; ++i) {
-            out->name[i] = e->d_name[i];
-        }
-        out->name[i] = 0;
-        out->is_dir = (uint8_t)((attr & FAT_ATTR_DIR) != 0);
+        ++dir_count;
     }
     closedir(fd);
 

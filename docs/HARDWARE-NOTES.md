@@ -144,6 +144,24 @@ For an Amiga period `p`: `FREQ ≈ 1469309 / p`.
 - `main()` returning does not go back to BASIC: the SDK's exit code loops
   forever.
 
+## Hypervisor directory entries
+
+`readdir` (trap `$14`) writes this structure to the page given in Y
+(`main.asm` in the hyppo source):
+
+| Offset | Content |
+| --- | --- |
+| `$00-$3F` | long file name (the 8.3 name if there is none) |
+| `$40` | length of that name |
+| `$41-$4D` | 8.3 name |
+| `$4E-$51` | start cluster |
+| `$52-$55` | file length |
+| `$56` | FAT attributes (`$10` = directory) |
+
+mega65-libc's `readdir` for llvm-mos copies the attribute from `$55` and
+the cluster from `$77`, so `d_type` and `d_ino` are wrong. Modplay65 reads
+the raw page at `$0400` instead.
+
 ## Misc
 
 - `$D02F`: write `$47` then `$53` to enable MEGA65 I/O.
