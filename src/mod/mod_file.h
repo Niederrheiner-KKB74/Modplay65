@@ -11,9 +11,10 @@
 
 #include <stdint.h>
 
+#include "hw/fileload.h"
 #include "mod/mod_load.h"
 
-#define MOD_FILE_ATTIC 0x8000000UL  /* file image in Attic RAM          */
+#define MOD_FILE_ATTIC FILELOAD_ATTIC /* file image in Attic RAM         */
 /*
  * Chip RAM used for samples, about 182 KB: banks 4 and 5, and the part of
  * bank 1 between the DOS area ($10000-$11FFF) and the colour RAM window
@@ -45,8 +46,7 @@ struct mod_file {
     uint8_t reduced;                        /* number of reduced samples */
 };
 
-/* Called after each block with the number of bytes read so far. */
-typedef void (*mod_file_progress)(uint32_t bytes);
+typedef fileload_progress mod_file_progress;
 
 /* filename: 8.3 name in the current SD card directory, upper case. */
 enum mod_file_error mod_file_load(const char *filename, struct mod_file *mod,

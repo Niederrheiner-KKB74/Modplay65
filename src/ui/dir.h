@@ -36,4 +36,7 @@ uint8_t dir_enter(const char *name);
 /* Does the name look like a MOD file ("name.mod" or "mod.name")? */
 uint8_t dir_is_mod(const char *name);
 
+/* Does the name end in ".sid"? */
+uint8_t dir_is_sid(const char *name);
+
 #endif

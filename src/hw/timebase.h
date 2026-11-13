@@ -18,6 +18,15 @@ void timebase_init(void);
 uint8_t timebase_poll(uint8_t bpm);
 
 /*
+ * Returns 1 each time 1 / rate seconds have elapsed; rate16 is the rate
+ * in Hz times 16 (e.g. 802 for 50.125 Hz). Used for SID play calls.
+ */
+uint8_t timebase_poll_rate(uint16_t rate16);
+
+/* Number of complete video frames per second (50 or 60). */
+uint8_t timebase_frame_rate(void);
+
+/*
  * Returns 1 once per video frame (when the raster counter has wrapped
  * since the last call that returned 1). Updated by timebase_poll().
  */

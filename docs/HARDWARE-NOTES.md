@@ -97,6 +97,21 @@ For an Amiga period `p`: `FREQ ≈ 1469309 / p`.
 
 ## Audio mixer and read-back
 
+Coefficient register number = output x 32 + input x 2 (+1 for the high
+byte); taken from `audiomix.asm` in the hyppo source:
+
+| Output | Registers | Use |
+| --- | --- | --- |
+| 0 / 1 | `$00-$1F` / `$20-$3F` | speaker and HDMI, left / right |
+| 6 / 7 | `$C0-$DF` / `$E0-$FF` | audio jack, left / right |
+
+Inputs 0 and 8 are the left SIDs (`$D400`, `$D420`), 1 and 9 the right SIDs
+(`$D440`, `$D460`); input 15 (`$xE`) is the master volume of an output. The
+hypervisor's stereo default is `$BEBE` for a SID input on its own side and
+`$4040` on the other side. A write needs about 17 cycles after selecting
+the register, because the mixer fetches the whole 16-bit value first.
+
+
 - `$D6F4`: mixer register select; `$D6F5`: mixer register data.
 - `$D6FC/$D6FD`: audio read-back, low/high byte, source selected by `$D6F4`.
 - `$D6F8-$D6FB`: 16-bit digital audio output registers, left and right.
@@ -174,6 +189,21 @@ For an Amiga period `p`: `FREQ ≈ 1469309 / p`.
 mega65-libc's `readdir` for llvm-mos copies the attribute from `$55` and
 the cluster from `$77`, so `d_type` and `d_ino` are wrong. Modplay65 reads
 the raw page at `$0400` instead.
+
+## MAP (45GS02)
+
+- Operands: A = lower offset bits 15-8, X = blocks 3-0 to map (bits 7-4)
+  and offset bits 19-16; Y and Z the same for blocks 7-4. X = `$0F` or
+  Z = `$0F` instead set the megabyte register. `EOM` (`$EA`) ends the
+  interrupt lock that `MAP` starts.
+- A mapped block takes priority over everything: ROMs, the `$01` banking
+  and the I/O area (`resolve_address_to_long` in `gs4510.vhdl`).
+- `$00/$01` are the CPU port only while block 0 is unmapped; with block 0
+  mapped they are ordinary RAM.
+- State while a program started from BASIC 65 runs (ROM 920413, seen in
+  Xemu): blocks 1-3 mapped 1:1, block 7 mapped to `$3E000`, megabytes 0,
+  i.e. `A=$00 X=$E0 Y=$00 Z=$83`. Modplay65 sets exactly this at start-up.
+- llvm-mos code expects Z = 0 (it uses `(zp),z` as plain indirect).
 
 ## Misc
 

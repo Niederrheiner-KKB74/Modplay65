@@ -107,20 +107,29 @@ Test files at hand: Commando (PSID, `$5000-$5FC6`, 19 songs), Katakis
 (PSID, `$0700-$70C2`, 34 songs), Great Giana Sisters (RSID, out of the
 initial scope). All three are PAL, 6581, one SID.
 
-- [ ] PSID header parser with host unit tests
-- [ ] Load a tune into the sandbox bank, call init and play through the
-      trampoline, hear music
-- [ ] Settle zero page, stack and CPU speed handling
+- [x] Free program memory first: `-Oz` for non-critical code, pattern view
+      without its 1 KB buffer
+- [x] PSID header parser with host unit tests
+- [x] Load a tune into bank 4, call init and play through the trampoline at
+      `$CF00`; Commando and Katakis match a reference 6502 run register for
+      register in Xemu (`tools/sidref`)
+- [x] Zero page and stack: the tune gets its own (block 0 mapped)
+- [x] CPU speed: tunes run at 40.5 MHz; no problems with the test tunes
+- [ ] Hear it on real hardware
 - [ ] Decide the register shadow question for visualisation
 - [ ] Mixer setup so one-SID tunes are centred
 
 ## M7 - SID integration
 
-- [ ] Sub-tune selection, PAL/NTSC and SID model from the header
-- [ ] 2SID and 3SID tunes
-- [ ] Detection and clear message for unsupported tunes (RSID and others)
-- [ ] SID tunes in the file browser and the song information panel
-- [ ] Visualisers for SID
+- [x] SID files in the file browser; tune information panel
+- [x] Sub-tune selection (cursor left/right), PAL/NTSC timing, SID model
+- [x] Clear message for unsupported tunes (RSID, play address 0, tune in
+      `$C000-$DFFF`, unsupported second SID address)
+- [x] Pause without losing the tune's volume setting
+- [ ] 2SID and 3SID tunes: allowed for `$D420/$D440/$D460`, untested
+- [ ] Visualisers for SID (master scope from the mixer read-back)
+- [ ] Program memory: only about 800 bytes left; must be freed before the
+      SID visualisers
 
 ## M8 - Polish and release
 

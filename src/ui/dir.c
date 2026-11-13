@@ -78,6 +78,19 @@ uint8_t dir_is_mod(const char *name)
                      lower((uint8_t)name[2]) == 'd' && name[3] == '.');
 }
 
+uint8_t dir_is_sid(const char *name)
+{
+    uint8_t len = 0;
+
+    while (name[len]) {
+        ++len;
+    }
+    return (uint8_t)(len >= 5 && name[len - 4] == '.' &&
+                     lower((uint8_t)name[len - 3]) == 's' &&
+                     lower((uint8_t)name[len - 2]) == 'i' &&
+                     lower((uint8_t)name[len - 1]) == 'd');
+}
+
 /* Order: directories first, then by name without regard to case. */
 static uint8_t before(const struct dir_entry *a, const struct dir_entry *b)
 {
@@ -140,7 +153,7 @@ uint8_t dir_read(void)
             if (other.name[0] == '.' && other.name[1] == 0) {
                 continue;
             }
-        } else if (!dir_is_mod(other.name)) {
+        } else if (!dir_is_mod(other.name) && !dir_is_sid(other.name)) {
             continue;
         }
         lcopy((uint32_t)(uintptr_t)&other, DIR_STORE + dir_count * ENTRY_SIZE,

@@ -28,3 +28,16 @@ add_executable(modtrace
     ../src/mod/mod_play.c
     ../src/mod/mod_tables.c)
 target_include_directories(modtrace PRIVATE ../src)
+
+add_executable(test_psid
+    test_psid.c
+    ../src/sid/psid.c)
+target_include_directories(test_psid PRIVATE ../src)
+target_compile_options(test_psid PRIVATE -Wall -Wextra -Wshadow)
+add_test(NAME psid COMMAND test_psid)
+
+# Development aid: show the parsed header of SID files.
+add_executable(psidinfo
+    psidinfo.c
+    ../src/sid/psid.c)
+target_include_directories(psidinfo PRIVATE ../src)

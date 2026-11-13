@@ -15,6 +15,7 @@ static const char note_names[12][3] = {
 static const char hex_digits[] = "0123456789ABCDEF";
 
 static char line[PATTERN_VIEW_W + 1];
+static uint8_t row_data[MOD_ROW_BYTES];
 
 static void note_text(char *dst, uint16_t period)
 {
@@ -74,7 +75,7 @@ static void format_row(uint8_t row, const uint8_t *d)
     *p = 0;
 }
 
-void pattern_draw(uint8_t x, uint8_t y, const uint8_t *rows, uint8_t current)
+void pattern_draw(uint8_t x, uint8_t y, uint8_t pattern, uint8_t current)
 {
     uint8_t i;
 
@@ -86,7 +87,8 @@ void pattern_draw(uint8_t x, uint8_t y, const uint8_t *rows, uint8_t current)
             screen_putn(x, sy, "", PATTERN_VIEW_W);
             continue;
         }
-        format_row((uint8_t)row, rows + (uint16_t)row * MOD_ROW_BYTES);
+        mod_read_row(pattern, (uint8_t)row, row_data);
+        format_row((uint8_t)row, row_data);
         screen_putn(x, sy, line, PATTERN_VIEW_W);
         if (i == PATTERN_VIEW_ROWS / 2) {
             screen_reverse(x, sy, PATTERN_VIEW_W, 1);

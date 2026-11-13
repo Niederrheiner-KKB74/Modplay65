@@ -1,7 +1,8 @@
 # Modplay65 architecture
 
-Status: draft 5 (13 November 2026). MOD playback, the user interface and
-the MOD visualisers work on real hardware; the SID part is not started. Items marked **[verify]** are assumptions that an early
+Status: draft 6 (13 November 2026). MOD playback, the user interface and
+the MOD visualisers work on real hardware. SID playback works in Xemu and
+matches a reference emulator; not yet tested on real hardware. Items marked **[verify]** are assumptions that an early
 milestone must confirm on Xemu and on a real MEGA65. See [ROADMAP.md](ROADMAP.md) for the
 order of work and [HARDWARE-NOTES.md](HARDWARE-NOTES.md) for register details.
 
@@ -26,8 +27,9 @@ A native MEGA65 program that
 
 The llvm-mos MEGA65 target loads the program at `$2001` and switches the
 BASIC ROM out. Modplay65 links with its own script: program and data in
-`$2001-$B5FF`, soft stack growing down from `$B600`, and `$B600-$CFFF`
-reserved for the screen's glyph block.
+`$2001-$B4FF`, soft stack growing down from `$B500`, `$B500-$CEFF` for the
+screen's glyph block and `$CF00-$CFFF` for the SID trampoline. Most code is
+built with `-Oz`; the code that runs every tick or frame with `-Os`.
 
 ## 3. Design principles
 
@@ -57,6 +59,7 @@ src/
     keyboard.h        hardware key queue                            (exists)
     screen.[ch]       direct text output to screen RAM              (exists)
     timebase.[ch]     tick timing from the raster counter           (exists)
+    fileload.[ch]     whole file from SD card to Attic RAM          (exists)
     sid.[ch]          SID chip access, model and mixer setup
     irq.s             interrupt entry/exit, CIA timer setup
     bigmem.[ch]       far memory helpers on top of mega65-libc
@@ -66,10 +69,9 @@ src/
     mod_play.[ch]     replay engine: rows, ticks, effects           (exists)
     mod_tables.[ch]   period and waveform tables                    (exists)
     mod_out.[ch]      engine output to audio DMA (MEGA65 only)      (exists)
-  sid/              SID support
+  sid/              SID support                                   (exists)
     psid.[ch]         PSID header parsing (portable)
-    sid_host.[ch]     sandbox bank setup, song selection
-    sid_tramp.s       trampoline that calls init/play in the sandbox
+    sid_play.[ch]     bank 4 setup, trampoline, song start, play calls
   ui/               directory listing (dir.[ch]); the screen layout and
                     key handling are still in main.c              (exists)
   vis/              scope.[ch], pattern.[ch]                      (exists)
@@ -83,12 +85,13 @@ docs/               this documentation
 | Region | Use |
 | --- | --- |
 | `$0000800-$00017FF` (bank 0) | Screen RAM (4000 bytes in 16-bit character mode) |
-| `$0002001-$000B5FF` (bank 0) | Program code, data, stack (own linker script `src/modplay65.ld`); about 33 KB of 38 KB used (Nov 2026) |
-| `$000B600-$000CFFF` (bank 0) | Glyph block: character set copy and pixel canvas (fixed address, see HARDWARE-NOTES.md) |
+| `$0002001-$000B4FF` (bank 0) | Program code, data, stack (own linker script `src/modplay65.ld`); about 36 KB of 37 KB used (Nov 2026) |
+| `$000B500-$000CEFF` (bank 0) | Glyph block: character set copy and pixel canvas (fixed address, see HARDWARE-NOTES.md) |
+| `$000CF00-$000CFFF` (bank 0) | SID trampoline (visible in the tune's memory map too) |
 | `$0010000-$0011FFF` (bank 1) | DOS, do not touch |
 | `$0012000-$001F7FF` (bank 1) | 54 KB sample playback memory (below the colour RAM window at `$1F800`) |
 | `$0020000-$003FFFF` (banks 2-3) | ROM, write-protected |
-| `$0040000-$005FFFF` (banks 4-5) | 128 KB free chip RAM: sample playback memory, SID sandbox |
+| `$0040000-$005FFFF` (banks 4-5) | 128 KB free chip RAM: MOD sample memory, or bank 4 as the SID tune's C64 memory |
 | `$8000000-$87FFFFF` | 8 MB Attic RAM: whole-file storage, pattern data; directory list at `$87E0000` |
 
 The constraint that shapes everything: audio DMA can only play samples that
@@ -197,41 +200,72 @@ play address. It expects the C64 memory map and may sit anywhere in 64 KB,
 very often at `$1000`. Modplay65 itself occupies `$2001-$CFFF` in bank 0, so
 a tune cannot simply be loaded where it wants to be.
 
-### 7.2 Proposed approach: sandbox bank
+### 7.2 Implementation: bank 4 as C64 memory (milestone 6)
 
-- The tune is loaded into bank 4 at its original 16-bit address, so bank 4
-  acts as "the C64's RAM".
-- A small assembly trampoline uses the 45GS02 `MAP` instruction to map
-  bank 4 over the address space, calls the tune's init or play routine and
-  restores the normal mapping afterwards.
-- The trampoline must be visible in both mappings. PSID v2 headers name a
-  free page range (`startPage`, `pageLength`); the trampoline is copied
-  there, as PSID64 does on a real C64. Tunes without that information get a
-  default location plus an overlap check.
-- The I/O area stays visible, so the tune writes to the real SID registers
-  at `$D400`.
-- The play routine is called from an interrupt at the rate the header asks
-  for: once per video frame, or CIA timer speed.
+- The tune is copied into chip RAM bank 4 (`$40000-$4FFFF`) at its own
+  16-bit address; bank 4 is "the C64's RAM". This is the same memory the
+  MOD player uses for samples, so only one of the two can be loaded.
+- `src/sid/sid_play.c` writes a 64-byte trampoline to `$CF00`. Before each
+  call of init or play it executes `MAP` so that the CPU sees bank 4
+  instead of bank 0:
 
-This is the riskiest part of the project and gets its own spike (milestone 6)
-before any UI work depends on it. Open points: zero page and stack handling
-while mapped, and whether the CPU should drop to 1 MHz during the call.
+  | Block | Address | Tune's map | Normal map |
+  | --- | --- | --- | --- |
+  | 0 | `$0000-$1FFF` | bank 4 | bank 0 |
+  | 1-3 | `$2000-$7FFF` | bank 4 | bank 0 (mapped 1:1) |
+  | 4-5 | `$8000-$BFFF` | bank 4 | bank 0 |
+  | 6 | `$C000-$DFFF` | **not mapped**: bank 0 RAM and I/O | same |
+  | 7 | `$E000-$FFFF` | bank 4 | C65 KERNAL (`$3E000`) |
 
-### 7.3 Scope
+  MAP takes priority over the I/O area, so block 6 must stay unmapped or
+  the tune's SID writes would land in RAM. The trampoline lives in block 6
+  and is therefore visible in both maps. The normal map is the one BASIC 65
+  leaves for a program; Modplay65 sets it explicitly at start-up so the
+  trampoline can restore it exactly.
+- With block 0 mapped, the tune has its own zero page and stack page in
+  bank 4, and `$00/$01` are plain RAM (the CPU port is only visible while
+  block 0 is unmapped), so a tune cannot change the real ROM/I/O banking.
+- After the call the trampoline does `SEI`, `CLD`, restores the normal map
+  and clears Z, which the compiled code relies on.
+- Interrupts: Modplay65 runs with interrupts disabled. Before init all chip
+  interrupt sources are switched off, and the tune's vectors at
+  `$FFFA-$FFFF` point to a stub that acknowledges and returns, in case a
+  tune enables interrupts itself.
+- Timing: VBI tunes are called at 50.125 Hz (PAL) or 59.826 Hz (NTSC),
+  CIA tunes at the rate of the CIA1 timer A value their init routine set
+  (timer stopped and loaded with `$FFFF` beforehand to detect it). The
+  rate comes from the raster line counter (`timebase_poll_rate`), so it
+  does not depend on the MEGA65's own video mode.
+- The tune runs at the full 40.5 MHz. No problems with the test tunes.
 
-- **In:** PSID v1-v4, sub-tune selection, PAL/NTSC and 6581/8580 selection
-  from the header (`$D63C` selects the SID model), 2SID and 3SID tunes (the
-  usual second address `$D420` is a real second SID on the MEGA65).
-- **Out, at least initially:** RSID tunes and anything else that needs a
-  complete C64 environment (own interrupt handlers, sample playback through
-  NMI, BASIC tunes). The player detects these and says so.
+Verified (November 2026): Commando (songs 1 and 2) and Katakis produce,
+in Xemu, exactly the SID register states of a reference run in an
+independent 6502 emulator (`tools/sidref`), at 50 play calls per second.
+Not yet heard on real hardware.
+
+### 7.3 Scope and limits
+
+- **Supported:** PSID v1-v4, sub-tune selection, PAL/NTSC timing, SID model
+  6581/8580 (`$D63C`), CIA and VBI timing.
+- **Refused with a message:** RSID tunes; tunes with play address 0 (they
+  install their own interrupt); tunes whose data, init or play lie in
+  `$C000-$DFFF`; second or third SID at an address other than `$D420`,
+  `$D440`, `$D460`.
+- **Known gaps:** a tune that writes to `$C000-$CFFF` outside its own data
+  overwrites Modplay65's glyph block (screen garbage, not a crash). Tunes
+  that use illegal 6502 opcodes fail, because those opcodes are 45GS02
+  instructions. 2SID/3SID tunes are untested. Volume and stereo settings
+  do not apply to SID yet.
+- Pause switches off waveform and gate of the voices but keeps the volume
+  register, because many tunes set it only once in their init routine.
 
 ### 7.4 Sound routing
 
-The MEGA65 has four SIDs: `$D400` and `$D420` on one side, `$D440` and
-`$D460` on the other. SID 1 was heard on the left only in a hardware test, so a normal one-SID
-tune would come out of one side only;
-the audio mixer (`$D6F4/$D6F5`) is set to centre it **[verify]**.
+The MEGA65 has four SIDs: `$D400` and `$D420` on the left, `$D440` and
+`$D460` on the right. With the default mixer setting a one-SID tune is
+loud on the left and quiet on the right. Centring it needs the audio mixer
+(`$D6F4/$D6F5`, layout in HARDWARE-NOTES.md); that is postponed until a
+safe way to save and restore the user's mixer setting is confirmed.
 
 ## 8. User interface
 
@@ -268,6 +302,9 @@ collections usually sit and it is the faster path. D81 support follows later.
 | Master oscilloscope | planned: mixer read-back `$D6FC/$D6FD` **[verify]** | same |
 | Note display | done | frequency register → note per voice |
 | Pattern view | done | not applicable |
+
+For SID tunes, the mixer read-back (`$D6F4` = source 0-15 or output
+16-23, value at `$D6FC/$D6FD`) can feed a master oscilloscope.
 
 SID registers are write-only, so per-voice data for SID tunes needs a shadow
 copy. Option: while the play routine runs, map RAM instead of I/O at

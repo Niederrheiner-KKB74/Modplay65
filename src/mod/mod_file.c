@@ -3,15 +3,12 @@
  */
 #include "mod/mod_file.h"
 
-#include <mega65/fileio.h>
 #include <mega65/memory.h>
 
-#define ATTIC_SIZE 0x800000UL
-#define BLOCK 512U
+#define BLOCK FILELOAD_BLOCK
+#define block fileload_buffer
 
-static uint8_t block[BLOCK];
 static uint8_t header[MOD_HEADER_SIZE];
-static char name_buf[64];
 static const struct mod_region regions[] = { MOD_SAMPLE_REGIONS };
 #define NUM_REGIONS (sizeof(regions) / sizeof(regions[0]))
 
@@ -69,46 +66,17 @@ static void copy_reduced(uint32_t src, uint32_t dst, uint32_t len,
 enum mod_file_error mod_file_load(const char *filename, struct mod_file *mod,
                                   mod_file_progress progress)
 {
-    uint8_t fd;
     uint8_t i;
     uint16_t n;
     uint32_t size = 0;
     uint32_t offset;
     enum mod_error err;
 
-    /* open() wants a writable string */
-    for (i = 0; filename[i] && i < sizeof(name_buf) - 1; ++i) {
-        name_buf[i] = filename[i];
+    switch (fileload_to_attic(filename, &size, progress)) {
+    case FILELOAD_NOT_FOUND: return MOD_FILE_NOT_FOUND;
+    case FILELOAD_TOO_BIG: return MOD_FILE_TOO_BIG;
+    default: break;
     }
-    name_buf[i] = 0;
-
-    closeall();
-    fd = open(name_buf);
-    if (fd == 0xFF) {
-        return MOD_FILE_NOT_FOUND;
-    }
-    for (;;) {
-        n = (uint16_t)read512(block);
-        if (n == 0) {
-            break;
-        }
-        if (n > BLOCK) {
-            n = BLOCK;
-        }
-        if (size + n > ATTIC_SIZE) {
-            close(fd);
-            return MOD_FILE_TOO_BIG;
-        }
-        lcopy(ptr32(block), MOD_FILE_ATTIC + size, n);
-        size += n;
-        if (progress) {
-            progress(size);
-        }
-        if (n < BLOCK) {
-            break;
-        }
-    }
-    close(fd);
     mod->size = size;
 
     n = size < MOD_HEADER_SIZE ? (uint16_t)size : (uint16_t)MOD_HEADER_SIZE;

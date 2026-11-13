@@ -12,10 +12,10 @@
 
 /*
  * Draw PATTERN_VIEW_ROWS rows of a pattern at column x, row y, with row
- * `current` in the middle and highlighted. rows points to the whole
- * pattern (64 rows of 16 bytes).
+ * `current` in the middle and highlighted. The rows are fetched with
+ * mod_read_row().
  */
-void pattern_draw(uint8_t x, uint8_t y, const uint8_t *rows, uint8_t current);
+void pattern_draw(uint8_t x, uint8_t y, uint8_t pattern, uint8_t current);
 
 /* Write the three-character name of a period ("C-2", "---") at x, y. */
 void pattern_note_name(uint8_t x, uint8_t y, uint16_t period);

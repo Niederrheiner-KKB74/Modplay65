@@ -31,16 +31,16 @@ static uint8_t *screen_base;
 
 /*
  * 256 text glyphs, then the canvas glyphs, 8 bytes each, at a fixed address
- * that the linker script keeps free ($B600-$CFFF).
+ * that the linker script keeps free ($B500-$CEFF).
  *
  * The address matters: the VIC-IV takes glyph data from the character ROM
  * instead of RAM when the glyph address is in $1000-$1FFF or $9000-$9FFF
  * (viciv.vhdl). A block that touches those ranges shows ROM characters.
  */
-#define GLYPH_BLOCK 0xB600U
+#define GLYPH_BLOCK 0xB500U
 #define GLYPH_BLOCK_SIZE ((256U + SCREEN_CANVAS_CELLS) * 8U)
-_Static_assert(GLYPH_BLOCK + GLYPH_BLOCK_SIZE <= 0xD000U,
-               "glyph block must end below the I/O area");
+_Static_assert(GLYPH_BLOCK + GLYPH_BLOCK_SIZE <= 0xCF00U,
+               "glyph block must end below the SID trampoline page");
 #define glyphs ((uint8_t *)GLYPH_BLOCK)
 #define CANVAS_PIXELS (glyphs + 256U * 8U)
 

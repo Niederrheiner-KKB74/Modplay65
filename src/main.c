@@ -1,7 +1,8 @@
 /*
  * Modplay65 - MOD and SID player for the MEGA65.
  *
- * Main screen: file browser, player panel and sample list.
+ * Main screen: file browser, player panel and a right-hand panel with
+ * scopes, pattern, samples (MOD) or tune information (SID).
  *
  * The program uses no KERNAL services: text goes straight to screen RAM
  * and keys come from the hardware key queue. Q leaves the program by
@@ -19,6 +20,7 @@
 #include "mod/mod_file.h"
 #include "mod/mod_out.h"
 #include "mod/mod_play.h"
+#include "sid/sid_play.h"
 #include "ui/dir.h"
 #include "vis/pattern.h"
 #include "vis/scope.h"
@@ -65,6 +67,12 @@
 
 static struct mod_file mod;
 static struct mod_player player;
+static struct sid_tune tune;
+
+static uint8_t sid_loaded;     /* a SID tune is in memory             */
+static uint8_t sid_running;    /* its play routine is being called    */
+static uint16_t sid_frames;    /* video frames since the song started */
+static uint16_t sid_seconds;
 
 static uint8_t loaded;         /* a module is in memory               */
 static uint8_t playing;        /* the song is running (not paused)    */
@@ -80,8 +88,6 @@ static uint8_t view = VIEW_SCOPES;
 /* Position of the row that is sounding (the engine is one row ahead). */
 static uint8_t shown_order, shown_pattern, shown_row;
 
-static uint8_t pattern_buf[MOD_ROWS * MOD_ROW_BYTES];
-static uint8_t pattern_in_buf = 0xFF;
 static uint8_t scopes_due; /* traces still to draw in this video frame */
 static uint8_t master = 64;    /* 0..64                               */
 static uint8_t separation = 4; /* 0..4                                */
@@ -105,6 +111,11 @@ static void status(const char *text, uint8_t colour)
 
 static void help(void)
 {
+    if (sid_loaded) {
+        status("RETURN play  SPACE pause  CRSR up/down file, left/right song  "
+               "Q quit", C_LABEL);
+        return;
+    }
     status("RETURN play  SPACE pause  CRSR file/position  +- vol  ,. stereo  "
            "V view  Q quit", C_LABEL);
 }
@@ -258,13 +269,58 @@ static void draw_pattern_view(void)
     if (!loaded) {
         return;
     }
-    if (pattern_in_buf != shown_pattern) {
-        lcopy(MOD_FILE_ATTIC + mod.info.pattern_offset +
-                  (uint32_t)shown_pattern * MOD_PATTERN_BYTES,
-              (uint32_t)(uintptr_t)pattern_buf, sizeof(pattern_buf));
-        pattern_in_buf = shown_pattern;
+    pattern_draw(VX, VY, shown_pattern, shown_row);
+}
+
+static void put_hex4(uint8_t x, uint8_t y, uint16_t value)
+{
+    screen_puts(x, y, "$");
+    screen_hex((uint8_t)(x + 1), y, value, 4);
+}
+
+/* Timing of the current song: "VBI 50 Hz" or "CIA 60 Hz". */
+static void draw_sid_timing(uint8_t x, uint8_t y)
+{
+    screen_puts(x, y, tune.cia ? "CIA" : "VBI");
+    screen_dec((uint8_t)(x + 4), y, (uint32_t)(tune.rate16 + 8) >> 4, 3);
+    screen_puts((uint8_t)(x + 8), y, "Hz");
+}
+
+static void draw_sid_info(void)
+{
+    static const char *const labels[] = {
+        "Title", "Author", "Released", "", "Format", "Songs", "Load",
+        "Init", "Play", "Timing", "Clock", "SID model"
+    };
+    static const char *const clocks[] = { "unknown", "PAL", "NTSC", "PAL+NTSC" };
+    static const char *const models[] = { "unknown", "6581", "8580", "6581+8580" };
+    const struct psid_info *info = &tune.info;
+    uint8_t i;
+
+    for (i = 0; i < sizeof(labels) / sizeof(labels[0]); ++i) {
+        screen_puts(VX, (uint8_t)(VY + i), labels[i]);
+        screen_colour(VX, (uint8_t)(VY + i), 10, C_LABEL);
     }
-    pattern_draw(VX, VY, pattern_buf, shown_row);
+    screen_putn(VX + 10, VY, info->name, 28);
+    screen_colour(VX + 10, VY, 28, C_TITLE);
+    screen_putn(VX + 10, VY + 1, info->author, 28);
+    screen_putn(VX + 10, VY + 2, info->released, 28);
+    screen_puts(VX + 10, VY + 4, info->rsid ? "RSID v" : "PSID v");
+    screen_dec(VX + 16, VY + 4, info->version, 1);
+    screen_dec(VX + 10, VY + 5, info->songs, 3);
+    screen_puts(VX + 14, VY + 5, "(start with");
+    screen_dec(VX + 26, VY + 5, info->start_song, 3);
+    screen_puts(VX + 29, VY + 5, ")");
+    put_hex4(VX + 10, VY + 6, info->load);
+    screen_puts(VX + 15, VY + 6, "-");
+    put_hex4(VX + 16, VY + 6, (uint16_t)(info->load + info->length - 1));
+    put_hex4(VX + 10, VY + 7, info->init);
+    put_hex4(VX + 10, VY + 8, info->play);
+    draw_sid_timing(VX + 10, VY + 9);
+    screen_puts(VX + 10, VY + 10, clocks[info->clock]);
+    screen_puts(VX + 10, VY + 11, models[info->model]);
+    screen_puts(VX, VY + 14, "Visualisation for SID tunes follows.");
+    screen_colour(VX, VY + 14, 38, C_FRAME);
 }
 
 /* Redraw the whole right-hand panel for the current view. */
@@ -276,12 +332,16 @@ static void draw_view(void)
     uint8_t i;
 
     screen_box(SAMPLES_X, SAMPLES_Y, SAMPLES_W, SAMPLES_H, C_FRAME,
-               titles[view]);
+               sid_loaded ? "SID tune" : titles[view]);
     for (i = 0; i < SAMPLES_ROWS; ++i) {
         screen_putn(VX, (uint8_t)(VY + i), "", SAMPLES_W - 2);
         screen_colour(VX, (uint8_t)(VY + i), SAMPLES_W - 2, C_TEXT);
     }
     scopes_due = 0;
+    if (sid_loaded) {
+        draw_sid_info();
+        return;
+    }
     switch (view) {
     case VIEW_SCOPES:
         scope_show(SCOPE_X, VY);
@@ -322,6 +382,13 @@ static void update_view(void)
 
 static void draw_settings(void)
 {
+    if (sid_loaded) {
+        screen_putn(PX, PY + 6, "CRSR left/right: other song", 28);
+        screen_colour(PX, PY + 6, 28, C_LABEL);
+        screen_putn(PX + 28, PY + 6, sid_running ? "PLAYING" : "PAUSED", 8);
+        screen_colour(PX + 28, PY + 6, 8, sid_running ? C_BAR : C_TITLE);
+        return;
+    }
     screen_puts(PX, PY + 6, "Volume");
     screen_dec(PX + 7, PY + 6, ((uint16_t)master * 100) >> 6, 3);
     screen_puts(PX + 10, PY + 6, "%");
@@ -342,7 +409,18 @@ static void draw_player_frame(void)
         screen_putn(PX, (uint8_t)(PY + i), "", PLAYER_W - 2);
         screen_colour(PX, (uint8_t)(PY + i), PLAYER_W - 2, C_TEXT);
     }
-    if (loaded) {
+    if (sid_loaded) {
+        screen_putn(PX, PY, tune.info.name, PLAYER_W - 2);
+        screen_colour(PX, PY, PLAYER_W - 2, C_TITLE);
+        screen_putn(PX, PY + 1, tune.info.author, PLAYER_W - 2);
+        screen_putn(PX, PY + 2, tune.info.released, PLAYER_W - 2);
+        screen_puts(PX, PY + 4, "Song");
+        screen_puts(PX + 8, PY + 4, "/");
+        screen_puts(PX + 15, PY + 4, "Time");
+        screen_puts(PX + 22, PY + 4, ":");
+        screen_colour(PX, PY + 4, PLAYER_W - 2, C_LABEL);
+        screen_dec(PX + 9, PY + 4, tune.info.songs, 3);
+    } else if (loaded) {
         screen_putn(PX, PY, mod.info.name[0] ? mod.info.name : "(no title)",
                     MOD_NAME_LEN);
         screen_colour(PX, PY, MOD_NAME_LEN, C_TITLE);
@@ -363,9 +441,22 @@ static void draw_player_frame(void)
             screen_colour(PX + 7, (uint8_t)(PY + 2 + i), BAR_LEN, C_BAR);
         }
     } else {
-        screen_puts(PX, PY + 2, "Select a MOD file and press RETURN.");
+        screen_puts(PX, PY + 2, "Select a MOD or SID file and press");
+        screen_puts(PX, PY + 3, "RETURN.");
     }
     draw_settings();
+}
+
+static void draw_sid_position(void)
+{
+    screen_dec(PX + 5, PY + 4, tune.song, 3);
+    screen_dec(PX + 20, PY + 4, sid_seconds / 60, 2);
+    screen_dec(PX + 23, PY + 4, sid_seconds % 60, 2);
+    if (sid_seconds % 60 < 10) {
+        screen_puts(PX + 23, PY + 4, "0");
+    }
+    screen_colour(PX + 5, PY + 4, 3, C_BRIGHT);
+    screen_colour(PX + 20, PY + 4, 5, C_BRIGHT);
 }
 
 static void draw_position(void)
@@ -423,9 +514,57 @@ static void restart_at(uint8_t order)
     draw_settings();
 }
 
+static void stop_sid(void)
+{
+    if (sid_loaded) {
+        sid_stop();
+        sid_loaded = 0;
+        sid_running = 0;
+    }
+}
+
+static void start_sid_song(uint8_t song)
+{
+    sid_start_song(&tune, song);
+    sid_frames = 0;
+    sid_seconds = 0;
+    sid_running = 1;
+    timebase_init();
+    draw_sid_position();
+    draw_sid_timing(VX + 10, VY + 9);
+    draw_settings();
+}
+
 static void show_progress(uint32_t bytes)
 {
     screen_dec(8, STATUS_ROW, bytes >> 10, 5);
+}
+
+/* Load and start the SID file at index. Returns 1 on success. */
+static uint8_t load_sid(uint8_t index)
+{
+    enum sid_error err;
+    uint8_t old = current;
+
+    err = sid_load(dir_entry(index)->name, &tune, show_progress);
+    if (err != SID_OK) {
+        draw_player_frame();
+        draw_view();
+        if (old != 0xFF) {
+            draw_files();
+        }
+        status("Error: ", C_ERROR);
+        screen_puts(7, STATUS_ROW, sid_error_text(err));
+        return 0;
+    }
+    sid_loaded = 1;
+    current = index;
+    draw_files();
+    draw_player_frame();
+    draw_view();
+    help();
+    start_sid_song(tune.info.start_song);
+    return 1;
 }
 
 /* Load and start the file at index. Returns 1 on success. */
@@ -435,10 +574,14 @@ static uint8_t load_and_play(uint8_t index)
     uint8_t old = current;
 
     stop();
+    stop_sid();
     loaded = 0;
     current = 0xFF;
     status("Loading       KB", C_LABEL);
     screen_putn(18, STATUS_ROW, dir_entry(index)->name, 60);
+    if (dir_is_sid(dir_entry(index)->name)) {
+        return load_sid(index);
+    }
     err = mod_file_load(dir_entry(index)->name, &mod, show_progress);
     if (err != MOD_FILE_OK) {
         draw_player_frame();
@@ -453,7 +596,6 @@ static uint8_t load_and_play(uint8_t index)
     loaded = 1;
     current = index;
     sample_page = 0;
-    pattern_in_buf = 0xFF;
     draw_files();
     draw_player_frame();
     draw_view();
@@ -497,6 +639,7 @@ static void activate_selection(void)
     }
     if (dir_entry(sel)->is_dir) {
         stop();
+        stop_sid();
         loaded = 0;
         if (!dir_enter(dir_entry(sel)->name)) {
             status("Error: cannot open directory", C_ERROR);
@@ -539,6 +682,9 @@ static void confirm_quit(void)
     if (playing) {
         mod_out_mute();
     }
+    if (sid_running) {
+        sid_pause();
+    }
     status("Leave Modplay65 and restart BASIC?  Y = yes, any other key = no",
            C_TITLE);
     do {
@@ -546,13 +692,14 @@ static void confirm_quit(void)
     } while (key == 0);
     if (key == 'y' || key == 'Y') {
         mod_out_stop();
+        stop_sid();
         system_exit_to_basic();
     }
     help();
     if (playing) {
         mod_out_refresh(&player);
-        timebase_init();
     }
+    timebase_init();
 }
 
 static void handle_key(uint8_t key)
@@ -566,6 +713,15 @@ static void handle_key(uint8_t key)
     case KEY_UP: move_selection(-1); break;
     case KEY_RETURN: activate_selection(); break;
     case ' ':
+        if (sid_loaded) {
+            sid_running = !sid_running;
+            if (!sid_running) {
+                sid_pause();
+            }
+            timebase_init();
+            draw_settings();
+            break;
+        }
         if (!loaded) {
             break;
         }
@@ -579,13 +735,17 @@ static void handle_key(uint8_t key)
         draw_settings();
         break;
     case KEY_RIGHT:
-        if (loaded) {
+        if (sid_loaded) {
+            start_sid_song((uint8_t)(tune.song < tune.info.songs ? tune.song + 1 : 1));
+        } else if (loaded) {
             restart_at((uint8_t)(player.order + 1 < mod.info.song_length
                                      ? player.order + 1 : 0));
         }
         break;
     case KEY_LEFT:
-        if (loaded) {
+        if (sid_loaded) {
+            start_sid_song((uint8_t)(tune.song > 1 ? tune.song - 1 : tune.info.songs));
+        } else if (loaded) {
             restart_at((uint8_t)(player.order ? player.order - 1 : 0));
         }
         break;
@@ -625,6 +785,9 @@ static void handle_key(uint8_t key)
         break;
     case 'v':
     case 'V':
+        if (sid_loaded) {
+            break;
+        }
         view = (uint8_t)(view + 1 < VIEW_COUNT ? view + 1 : 0);
         draw_view();
         break;
@@ -641,10 +804,11 @@ int main(void)
     audio_dma_init();
     screen_init();
     screen_palette(C_BACK, C_BACK);
+    sid_system_init();
     keyboard_flush();
 
     screen_putn(0, 0, " Modplay65 " MODPLAY65_VERSION, 80);
-    screen_puts(49, 0, "MOD player for the MEGA65");
+    screen_puts(46, 0, "MOD and SID player for the MEGA65");
     screen_colour(0, 0, 80, C_TITLE);
     screen_reverse(0, 0, 80, 1);
     screen_box(FILES_X, FILES_Y, FILES_W, FILES_H, C_FRAME, "Files");
@@ -654,6 +818,16 @@ int main(void)
     read_directory();
 
     for (;;) {
+        if (sid_running) {
+            if (timebase_poll_rate(tune.rate16)) {
+                sid_play_tick();
+            }
+            if (timebase_new_frame() && ++sid_frames == timebase_frame_rate()) {
+                sid_frames = 0;
+                ++sid_seconds;
+                draw_sid_position();
+            }
+        }
         if (playing && timebase_poll(player.tempo)) {
             if (player.tick == 0) { /* this tick starts a new row */
                 shown_order = player.order;
