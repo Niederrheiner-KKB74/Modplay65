@@ -71,13 +71,13 @@ built on top of them.
 - [x] Volume and stereo separation settings
 - [x] Simple level meters per channel
 - [x] Automatic advance to the next file when a song ends
-- [ ] Confirm on real hardware (tested in Xemu: browsing, loading, pause,
-      seeking, settings, auto-advance)
+- [x] Confirmed on real hardware: file list, directory changes, long
+      file names are shown (13 Nov 2026)
 - [x] Sub-directories: entering, `..` and loading inside a directory work
       in Xemu with a FAT32 test image (first version showed none, because
       the library's readdir returns the wrong attribute byte)
-- [ ] Long file names: untested (the test image's long names were not
-      picked up by the hypervisor)
+- [ ] Long file names: shown correctly on hardware; loading a file by its
+      long name not yet explicitly confirmed
 - [ ] Custom character set
 - [ ] More than 100 directory entries
 
