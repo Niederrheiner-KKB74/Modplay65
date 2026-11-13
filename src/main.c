@@ -4,8 +4,8 @@
  * Main screen: file browser, player panel and sample list.
  *
  * The program uses no KERNAL services: text goes straight to screen RAM
- * and keys come from the hardware key queue. It does not return to BASIC;
- * reset the machine to leave.
+ * and keys come from the hardware key queue. Q leaves the program by
+ * restarting BASIC.
  */
 #include <stdint.h>
 
@@ -14,6 +14,7 @@
 #include "hw/audio_dma.h"
 #include "hw/keyboard.h"
 #include "hw/screen.h"
+#include "hw/system.h"
 #include "hw/timebase.h"
 #include "mod/mod_file.h"
 #include "mod/mod_out.h"
@@ -92,7 +93,7 @@ static void status(const char *text, uint8_t colour)
 static void help(void)
 {
     status("RETURN play  SPACE pause  CRSR file/position  +- volume  ,. stereo  "
-           "S samples", C_LABEL);
+           "S samples  Q quit", C_LABEL);
 }
 
 /* ---- file list ------------------------------------------------------ */
@@ -430,9 +431,37 @@ static void move_selection(int8_t delta)
     }
 }
 
+/* Ask before leaving; the music keeps its state if the answer is no. */
+static void confirm_quit(void)
+{
+    uint8_t key;
+
+    if (playing) {
+        mod_out_mute();
+    }
+    status("Leave Modplay65 and restart BASIC?  Y = yes, any other key = no",
+           C_TITLE);
+    do {
+        key = keyboard_poll();
+    } while (key == 0);
+    if (key == 'y' || key == 'Y') {
+        mod_out_stop();
+        system_exit_to_basic();
+    }
+    help();
+    if (playing) {
+        mod_out_refresh(&player);
+        timebase_init();
+    }
+}
+
 static void handle_key(uint8_t key)
 {
     switch (key) {
+    case 'q':
+    case 'Q':
+        confirm_quit();
+        break;
     case KEY_DOWN: move_selection(1); break;
     case KEY_UP: move_selection(-1); break;
     case KEY_RETURN: activate_selection(); break;

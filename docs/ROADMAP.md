@@ -78,6 +78,8 @@ built on top of them.
       the library's readdir returns the wrong attribute byte)
 - [ ] Long file names: shown correctly on hardware; loading a file by its
       long name not yet explicitly confirmed
+- [x] Q leaves the program by restarting BASIC through the reset vector
+      (works in Xemu; hardware check pending)
 - [ ] Custom character set
 - [ ] More than 100 directory entries
 
@@ -89,6 +91,10 @@ built on top of them.
 - [ ] Note display
 
 ## M6 - SID spike
+
+Test files at hand: Commando (PSID, `$5000-$5FC6`, 19 songs), Katakis
+(PSID, `$0700-$70C2`, 34 songs), Great Giana Sisters (RSID, out of the
+initial scope). All three are PAL, 6581, one SID.
 
 - [ ] PSID header parser with host unit tests
 - [ ] Load a tune into the sandbox bank, call init and play through the

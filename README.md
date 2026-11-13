@@ -22,8 +22,7 @@ visualisers are not started.
 | + / - | volume |
 | , / . | stereo separation |
 | S | second page of the sample list |
-
-There is no way back to BASIC; reset the MEGA65 to leave.
+| Q | leave (asks first); restarts BASIC, the program is then gone from memory |
 
 ## Planned features
 
