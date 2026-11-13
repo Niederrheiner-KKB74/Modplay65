@@ -50,9 +50,10 @@ built on top of them.
       through the engine on the PC
 - [x] Confirmed on real hardware by ear with one module (12 Nov 2026)
 - [x] Sample memory extended to 182 KB (banks 4, 5 and part of bank 1)
-- [ ] Test with modules that use more effects and looped samples: seven
-      more files load and run in Xemu and on the PC; listening test on
-      hardware pending
+- [x] Eight modules covering all effects except tremolo play correctly
+      on real hardware, including samples in bank 1 and one module at
+      reduced sample rate (13 Nov 2026)
+- [ ] Tremolo (`7xy`) is untested with real music
 - [x] Host-side reference test against micromod (`tools/refcompare`):
       eight modules agree on position, period (within 2 units), volume
       and note triggers on every tick
