@@ -5,6 +5,7 @@
 
 #include <mega65/dirent.h>
 #include <mega65/fileio.h>
+#include <mega65/memory.h>
 
 /*
  * The hypervisor writes its directory entry to page $0400 (the library's
@@ -22,8 +23,33 @@
 #define FAT_ATTR_DIR 0x10
 #define FAT_ATTR_HIDDEN 0x02
 
-struct dir_entry dir_entries[DIR_MAX_ENTRIES];
+/* The list lives in Attic RAM, far above the module data. */
+#define DIR_STORE 0x87E0000UL
+#define ENTRY_SIZE ((uint32_t)sizeof(struct dir_entry))
+
 uint8_t dir_count;
+
+static uint8_t order[DIR_MAX_ENTRIES]; /* sorted position -> stored slot */
+static struct dir_entry current;       /* buffer handed out by dir_entry */
+static struct dir_entry other;         /* second buffer for comparisons  */
+static uint8_t current_slot = 0xFF;
+
+static void fetch(uint8_t slot, struct dir_entry *dst)
+{
+    lcopy(DIR_STORE + slot * ENTRY_SIZE, (uint32_t)(uintptr_t)dst,
+          sizeof(struct dir_entry));
+}
+
+const struct dir_entry *dir_entry(uint8_t index)
+{
+    uint8_t slot = order[index];
+
+    if (slot != current_slot) {
+        fetch(slot, &current);
+        current_slot = slot;
+    }
+    return &current;
+}
 
 static char name_buf[DIR_NAME_LEN + 1];
 
@@ -75,22 +101,21 @@ static uint8_t before(const struct dir_entry *a, const struct dir_entry *b)
 
 uint8_t dir_read(void)
 {
-    static struct dir_entry tmp;
     uint8_t fd;
     uint8_t i, j;
     uint16_t guard = 0;
 
     dir_count = 0;
+    current_slot = 0xFF;
     closeall();
     fd = opendir();
     if (fd == 0xFF) {
         return 0;
     }
-    while (dir_count < DIR_MAX_ENTRIES && ++guard < 2000) {
+    while (dir_count < DIR_MAX_ENTRIES && ++guard < 4000) {
         const char *name = (const char *)RAW_DIRENT;
         uint8_t len;
         uint8_t attr;
-        struct dir_entry *out;
 
         if (readdir(fd) == 0) {
             break;
@@ -106,31 +131,37 @@ uint8_t dir_read(void)
         if (attr & (FAT_ATTR_VOLUME | FAT_ATTR_HIDDEN)) {
             continue;
         }
-        out = &dir_entries[dir_count];
         for (i = 0; i < len; ++i) {
-            out->name[i] = name[i];
+            other.name[i] = name[i];
         }
-        out->name[len] = 0;
-        out->is_dir = (uint8_t)((attr & FAT_ATTR_DIR) != 0);
-        if (out->is_dir) {
-            if (out->name[0] == '.' && out->name[1] == 0) {
+        other.name[len] = 0;
+        other.is_dir = (uint8_t)((attr & FAT_ATTR_DIR) != 0);
+        if (other.is_dir) {
+            if (other.name[0] == '.' && other.name[1] == 0) {
                 continue;
             }
-        } else if (!dir_is_mod(out->name)) {
+        } else if (!dir_is_mod(other.name)) {
             continue;
         }
+        lcopy((uint32_t)(uintptr_t)&other, DIR_STORE + dir_count * ENTRY_SIZE,
+              sizeof(struct dir_entry));
         ++dir_count;
     }
     closedir(fd);
 
-    /* insertion sort */
-    for (i = 1; i < dir_count; ++i) {
-        tmp = dir_entries[i];
-        for (j = i; j > 0 && before(&tmp, &dir_entries[j - 1]); --j) {
-            dir_entries[j] = dir_entries[j - 1];
+    /* Insertion sort of the index list; the entries stay where they are. */
+    for (i = 0; i < dir_count; ++i) {
+        fetch(i, &other);
+        for (j = i; j > 0; --j) {
+            fetch(order[j - 1], &current);
+            if (!before(&other, &current)) {
+                break;
+            }
+            order[j] = order[j - 1];
         }
-        dir_entries[j] = tmp;
+        order[j] = i;
     }
+    current_slot = 0xFF;
     return dir_count;
 }
 

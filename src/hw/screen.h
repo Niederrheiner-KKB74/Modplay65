@@ -13,10 +13,13 @@
 #define SCREEN_ROWS 25
 
 /*
- * Read the screen location and line width from the VIC-IV, select the
- * lower/upper case character set and clear the screen.
+ * Switch the 80-column screen to 16-bit character mode with a RAM copy of
+ * the lower/upper case character set, and clear it.
  */
 void screen_init(void);
+
+/* Put back the video settings found by screen_init(). */
+void screen_restore(void);
 
 /* Fill the screen with spaces. */
 void screen_clear(void);
@@ -72,5 +75,33 @@ void screen_bar(uint8_t x, uint8_t y, uint8_t len, uint8_t filled);
 
 /* Put one raw screen code. */
 void screen_poke(uint8_t x, uint8_t y, uint8_t code);
+
+/*
+ * Pixel canvas: a rectangle of character cells whose glyphs are private
+ * RAM, so it can be drawn into pixel by pixel (one colour per cell, set
+ * with screen_colour). Only one canvas is on screen at a time.
+ */
+#define SCREEN_CANVAS_CELLS 576U /* e.g. 36 x 16 cells = 288 x 128 pixels */
+
+/*
+ * Put a cleared canvas of w x h cells at column x, row y. Returns 0 if it
+ * has more than SCREEN_CANVAS_CELLS cells.
+ */
+uint8_t *screen_canvas_show(uint8_t x, uint8_t y, uint8_t w, uint8_t h);
+
+/*
+ * Move one row of w canvas cells from screen row from_y to row to_y
+ * (same column x); the cells left behind become spaces. Lets a caller
+ * leave text rows between parts of the canvas.
+ */
+void screen_canvas_move_row(uint8_t x, uint8_t from_y, uint8_t to_y,
+                            uint8_t w);
+
+/*
+ * Set or clear the pixels selected by mask (bit 7 = leftmost of the eight
+ * pixels around x) in pixel rows y0..y1 of the canvas.
+ */
+void screen_canvas_vline(uint16_t x, uint8_t y0, uint8_t y1, uint8_t mask,
+                         uint8_t set);
 
 #endif

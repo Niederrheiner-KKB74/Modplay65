@@ -3,6 +3,10 @@
  */
 #include "hw/audio_dma.h"
 
+#include <string.h>
+
+#include <mega65/memory.h>
+
 void audio_dma_stop(uint8_t channel)
 {
     AUDIO_DMA_CH[channel].ctrl = 0;
@@ -103,4 +107,33 @@ uint32_t audio_dma_position(uint8_t channel)
 
     return (uint32_t)c->cur[0] | ((uint32_t)c->cur[1] << 8) |
            ((uint32_t)c->cur[2] << 16);
+}
+
+void audio_dma_peek(uint8_t channel, uint8_t *dst, uint8_t count)
+{
+    volatile struct audio_dma_channel *c = &AUDIO_DMA_CH[channel];
+    uint8_t ctrl = c->ctrl;
+    uint32_t pos = audio_dma_position(channel);
+    uint16_t top = (uint16_t)(c->top[0] | ((uint16_t)c->top[1] << 8));
+    uint8_t guard = 8;
+
+    memset(dst, 0, count);
+    if (!(ctrl & AUDIO_DMA_CTRL_ENABLE) || (ctrl & AUDIO_DMA_CTRL_STOPPED)) {
+        return;
+    }
+    while (count && guard--) {
+        uint16_t left = (uint16_t)(top - (uint16_t)pos);
+        uint8_t n = (uint8_t)(left < count ? left : count);
+
+        if (n) {
+            lcopy(pos, (uint32_t)(uintptr_t)dst, n);
+            dst += n;
+            count = (uint8_t)(count - n);
+        }
+        if (!(ctrl & AUDIO_DMA_CTRL_LOOP)) {
+            return; /* one-shot: the rest stays silent */
+        }
+        pos = (uint32_t)c->base[0] | ((uint32_t)c->base[1] << 8) |
+              ((uint32_t)c->base[2] << 16);
+    }
 }

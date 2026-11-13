@@ -20,6 +20,8 @@
 #include "mod/mod_out.h"
 #include "mod/mod_play.h"
 #include "ui/dir.h"
+#include "vis/pattern.h"
+#include "vis/scope.h"
 
 #ifndef MODPLAY65_VERSION
 #define MODPLAY65_VERSION "dev"
@@ -70,6 +72,17 @@ static uint8_t sel;            /* selected entry in the file list     */
 static uint8_t top;            /* first visible entry                 */
 static uint8_t current = 0xFF; /* entry that is loaded, 0xFF = none   */
 static uint8_t sample_page;    /* 0 = samples 1-21, 1 = 22-31         */
+
+/* What the right-hand panel shows. */
+enum { VIEW_SCOPES, VIEW_PATTERN, VIEW_SAMPLES, VIEW_COUNT };
+static uint8_t view = VIEW_SCOPES;
+
+/* Position of the row that is sounding (the engine is one row ahead). */
+static uint8_t shown_order, shown_pattern, shown_row;
+
+static uint8_t pattern_buf[MOD_ROWS * MOD_ROW_BYTES];
+static uint8_t pattern_in_buf = 0xFF;
+static uint8_t scopes_due; /* traces still to draw in this video frame */
 static uint8_t master = 64;    /* 0..64                               */
 static uint8_t separation = 4; /* 0..4                                */
 static uint8_t level[MOD_CHANNELS];
@@ -92,8 +105,8 @@ static void status(const char *text, uint8_t colour)
 
 static void help(void)
 {
-    status("RETURN play  SPACE pause  CRSR file/position  +- volume  ,. stereo  "
-           "S samples  Q quit", C_LABEL);
+    status("RETURN play  SPACE pause  CRSR file/position  +- vol  ,. stereo  "
+           "V view  Q quit", C_LABEL);
 }
 
 /* ---- file list ------------------------------------------------------ */
@@ -103,17 +116,18 @@ static void draw_file_row(uint8_t row)
     uint8_t index = (uint8_t)(top + row);
     uint8_t y = (uint8_t)(FILES_Y + 1 + row);
     uint8_t x = FILES_X + 1;
+    const struct dir_entry *entry;
 
     if (index >= dir_count) {
         screen_putn(x, y, "", FILES_W - 2);
         return;
     }
+    entry = dir_entry(index);
     screen_poke(x, y, (uint8_t)(index == current ? 0x3E : 0x20)); /* > */
-    screen_putn((uint8_t)(x + 1), y, dir_entries[index].name, FILES_W - 8);
-    screen_putn((uint8_t)(x + FILES_W - 7), y,
-                dir_entries[index].is_dir ? "<DIR>" : "", 5);
-    screen_colour(x, y, FILES_W - 2,
-                  dir_entries[index].is_dir ? C_DIR : C_TEXT);
+    screen_putn((uint8_t)(x + 1), y, entry->name, FILES_W - 8);
+    screen_putn((uint8_t)(x + FILES_W - 7), y, entry->is_dir ? "<DIR>" : "",
+                5);
+    screen_colour(x, y, FILES_W - 2, entry->is_dir ? C_DIR : C_TEXT);
     screen_reverse(x, y, FILES_W - 2, (uint8_t)(index == sel));
 }
 
@@ -216,6 +230,91 @@ static void mark_samples(void)
     }
 }
 
+/* ---- right-hand panel: scopes, pattern or samples -------------------- */
+
+#define VX (SAMPLES_X + 1)
+#define VY (SAMPLES_Y + 1)
+#define SCOPE_X (SAMPLES_X + 2)
+
+static void draw_scope_labels(void)
+{
+    uint8_t i;
+
+    for (i = 0; i < MOD_CHANNELS; ++i) {
+        const struct mod_channel *c = &player.ch[i];
+        uint8_t y = (uint8_t)(VY + i * SCOPE_ROW_STEP + SCOPE_CELLS_H);
+
+        screen_dec(SCOPE_X + 8, y, c->sample, 2);
+        if (c->sample && loaded) {
+            screen_putn(SCOPE_X + 11, y, mod.info.sample[c->sample - 1].name,
+                        20);
+        }
+        pattern_note_name(SCOPE_X + 32, y, c->out_period);
+    }
+}
+
+static void draw_pattern_view(void)
+{
+    if (!loaded) {
+        return;
+    }
+    if (pattern_in_buf != shown_pattern) {
+        lcopy(MOD_FILE_ATTIC + mod.info.pattern_offset +
+                  (uint32_t)shown_pattern * MOD_PATTERN_BYTES,
+              (uint32_t)(uintptr_t)pattern_buf, sizeof(pattern_buf));
+        pattern_in_buf = shown_pattern;
+    }
+    pattern_draw(VX, VY, pattern_buf, shown_row);
+}
+
+/* Redraw the whole right-hand panel for the current view. */
+static void draw_view(void)
+{
+    static const char *const titles[VIEW_COUNT] = {
+        "Scopes", "Pattern", "Samples (S = more)"
+    };
+    uint8_t i;
+
+    screen_box(SAMPLES_X, SAMPLES_Y, SAMPLES_W, SAMPLES_H, C_FRAME,
+               titles[view]);
+    for (i = 0; i < SAMPLES_ROWS; ++i) {
+        screen_putn(VX, (uint8_t)(VY + i), "", SAMPLES_W - 2);
+        screen_colour(VX, (uint8_t)(VY + i), SAMPLES_W - 2, C_TEXT);
+    }
+    scopes_due = 0;
+    switch (view) {
+    case VIEW_SCOPES:
+        scope_show(SCOPE_X, VY);
+        for (i = 0; i < MOD_CHANNELS; ++i) {
+            uint8_t y = (uint8_t)(VY + i * SCOPE_ROW_STEP + SCOPE_CELLS_H);
+
+            screen_puts(SCOPE_X, y, "Ch");
+            screen_dec(SCOPE_X + 3, y, (uint32_t)i + 1, 1);
+            screen_colour(SCOPE_X, y, 8, C_LABEL);
+        }
+        if (loaded) {
+            draw_scope_labels();
+        }
+        break;
+    case VIEW_PATTERN:
+        draw_pattern_view();
+        break;
+    default:
+        draw_samples();
+        break;
+    }
+}
+
+/* Called when a new row starts sounding. */
+static void update_view(void)
+{
+    switch (view) {
+    case VIEW_SCOPES: draw_scope_labels(); break;
+    case VIEW_PATTERN: draw_pattern_view(); break;
+    default: mark_samples(); break;
+    }
+}
+
 /* ---- player panel --------------------------------------------------- */
 
 #define PX (PLAYER_X + 1)
@@ -271,9 +370,9 @@ static void draw_player_frame(void)
 
 static void draw_position(void)
 {
-    screen_dec(PX + 4, PY + 1, (uint32_t)player.order + 1, 3);
-    screen_dec(PX + 17, PY + 1, player.pattern, 3);
-    screen_dec(PX + 26, PY + 1, player.row, 2);
+    screen_dec(PX + 4, PY + 1, (uint32_t)shown_order + 1, 3);
+    screen_dec(PX + 17, PY + 1, shown_pattern, 3);
+    screen_dec(PX + 26, PY + 1, shown_row, 2);
     screen_dec(PX + 30, PY + 1, player.speed, 2);
     screen_dec(PX + 33, PY + 1, player.tempo, 3);
 }
@@ -339,11 +438,11 @@ static uint8_t load_and_play(uint8_t index)
     loaded = 0;
     current = 0xFF;
     status("Loading       KB", C_LABEL);
-    screen_putn(18, STATUS_ROW, dir_entries[index].name, 60);
-    err = mod_file_load(dir_entries[index].name, &mod, show_progress);
+    screen_putn(18, STATUS_ROW, dir_entry(index)->name, 60);
+    err = mod_file_load(dir_entry(index)->name, &mod, show_progress);
     if (err != MOD_FILE_OK) {
         draw_player_frame();
-        draw_samples();
+        draw_view();
         if (old != 0xFF) {
             draw_files();
         }
@@ -354,9 +453,10 @@ static uint8_t load_and_play(uint8_t index)
     loaded = 1;
     current = index;
     sample_page = 0;
+    pattern_in_buf = 0xFF;
     draw_files();
     draw_player_frame();
-    draw_samples();
+    draw_view();
     if (mod.reduced) {
         status("   large sample(s) stored at reduced rate to fit memory "
                "(h = half, q = quarter)", C_TITLE);
@@ -376,7 +476,7 @@ static void play_next_file(void)
 
     for (i = 0; i < dir_count; ++i) {
         index = (uint8_t)(index + 1 < dir_count ? index + 1 : 0);
-        if (!dir_entries[index].is_dir) {
+        if (!dir_entry(index)->is_dir) {
             if (index == current) {
                 restart_at(0); /* the only file: play it again */
                 return;
@@ -395,14 +495,14 @@ static void activate_selection(void)
     if (sel >= dir_count) {
         return;
     }
-    if (dir_entries[sel].is_dir) {
+    if (dir_entry(sel)->is_dir) {
         stop();
         loaded = 0;
-        if (!dir_enter(dir_entries[sel].name)) {
+        if (!dir_enter(dir_entry(sel)->name)) {
             status("Error: cannot open directory", C_ERROR);
         }
         draw_player_frame();
-        draw_samples();
+        draw_view();
         read_directory();
     } else {
         load_and_play(sel);
@@ -517,10 +617,16 @@ static void handle_key(uint8_t key)
         break;
     case 's':
     case 'S':
-        if (loaded && mod.info.num_samples > SAMPLES_ROWS) {
+        if (view == VIEW_SAMPLES && loaded &&
+            mod.info.num_samples > SAMPLES_ROWS) {
             sample_page ^= 1;
             draw_samples();
         }
+        break;
+    case 'v':
+    case 'V':
+        view = (uint8_t)(view + 1 < VIEW_COUNT ? view + 1 : 0);
+        draw_view();
         break;
     default:
         break;
@@ -543,23 +649,41 @@ int main(void)
     screen_reverse(0, 0, 80, 1);
     screen_box(FILES_X, FILES_Y, FILES_W, FILES_H, C_FRAME, "Files");
     screen_box(PLAYER_X, PLAYER_Y, PLAYER_W, PLAYER_H, C_FRAME, "Player");
-    screen_box(SAMPLES_X, SAMPLES_Y, SAMPLES_W, SAMPLES_H, C_FRAME,
-               "Samples (S = more)");
     draw_player_frame();
-    draw_samples();
+    draw_view();
     read_directory();
 
     for (;;) {
         if (playing && timebase_poll(player.tempo)) {
+            if (player.tick == 0) { /* this tick starts a new row */
+                shown_order = player.order;
+                shown_pattern = player.pattern;
+                shown_row = player.row;
+            }
             mod_player_tick(&player);
             mod_out_apply(&player, &mod);
             draw_levels();
             if (player.row_started) {
                 draw_position();
-                mark_samples();
+                update_view();
             }
             if (player.song_looped) {
                 play_next_file();
+            }
+        }
+        /* Oscilloscopes: all four traces once per video frame, but only
+         * one per pass through this loop so a tick is never late by more
+         * than one trace. */
+        if (playing && view == VIEW_SCOPES) {
+            if (timebase_new_frame()) {
+                scopes_due = MOD_CHANNELS;
+            }
+            if (scopes_due) {
+                uint8_t ch = (uint8_t)(MOD_CHANNELS - scopes_due);
+
+                scope_draw(ch, mod_out_dma_channel(ch),
+                           player.ch[ch].out_volume);
+                --scopes_due;
             }
         }
         key = keyboard_poll();

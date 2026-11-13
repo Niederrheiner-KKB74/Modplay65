@@ -34,6 +34,9 @@ void mod_out_refresh(const struct mod_player *p);
 /* Set all channel volumes to zero without stopping the samples (pause). */
 void mod_out_mute(void);
 
+/* The audio DMA channel (0..3) that plays engine channel i. */
+uint8_t mod_out_dma_channel(uint8_t i);
+
 /* Silence all channels. */
 void mod_out_stop(void);
 

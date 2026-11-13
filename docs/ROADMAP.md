@@ -81,14 +81,23 @@ built on top of them.
 - [x] Q leaves the program by restarting BASIC through the reset vector
       (works in Xemu; hardware check pending)
 - [ ] Custom character set
-- [ ] More than 100 directory entries
+- [x] Up to 255 directory entries (list kept in Attic RAM)
 
 ## M5 - Visualisation for MOD
 
-- [ ] Level meters per channel
-- [ ] Oscilloscope per channel from the DMA playhead
-- [ ] Scrolling pattern view
-- [ ] Note display
+- [x] Pixel canvas on the text screen (16-bit character mode, glyphs in
+      RAM)
+- [x] Oscilloscope per channel, drawn once per video frame from the data
+      each audio DMA channel is about to play
+- [x] Scrolling pattern view in tracker notation
+- [x] Note display (under each scope trace)
+- [x] V switches the right-hand panel: scopes, pattern, samples
+- [x] Level meters per channel (player panel, since M4)
+- [ ] Confirm on real hardware (Xemu: all three views, tempo unchanged
+      with scopes running, 334 rows in 40 s)
+- [ ] Tick in an interrupt: still polled; a pass through the main loop
+      must stay shorter than one video frame or the song slows down
+- [ ] Spectrum-style display, master scope from the mixer read-back
 
 ## M6 - SID spike
 

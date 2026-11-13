@@ -119,6 +119,13 @@ For an Amiga period `p`: `FREQ ≈ 1469309 / p`.
   upper case and graphics, `$001800` the set with lower and upper case
   (the default with ROM 920413). Modplay65 sets `$001800`.
 - Colour RAM is at `$FF80000`.
+- `$D054` bit 0 (CHR16): two bytes of screen RAM per cell (13-bit
+  character number) and two bytes of colour RAM (attributes, then
+  colour); `$D058/$D059` must then be 160 for 80 columns. The glyph of
+  character n is at CHARPTR + 8n also for n > 255, which gives a pixel
+  canvas without bitmap mode. Verified in Xemu.
+- The ROM character sets can be read at `$FF7E000` (upper case/graphics)
+  and `$FF7E800` (lower/upper case).
 
 ## Keyboard
 

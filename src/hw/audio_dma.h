@@ -88,6 +88,13 @@ void audio_dma_play_looped(uint8_t channel, uint32_t address,
                            uint32_t loop_start, uint32_t loop_end,
                            uint32_t freq);
 
+/*
+ * Copy the next count sample bytes the channel is going to play into dst,
+ * following its loop; silence (0) is used after the end of a one-shot
+ * sample and for a stopped channel. For oscilloscope displays.
+ */
+void audio_dma_peek(uint8_t channel, uint8_t *dst, uint8_t count);
+
 /* Read the 24-bit playhead of a channel. */
 uint32_t audio_dma_position(uint8_t channel);
 

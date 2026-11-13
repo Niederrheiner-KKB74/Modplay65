@@ -12,7 +12,7 @@
 #define NO_NOTE 0xFF
 
 /* Find the note whose finetune-0 period is closest to period. */
-static uint8_t note_of_period(uint16_t period)
+uint8_t mod_note_of_period(uint16_t period)
 {
     uint8_t i;
 
@@ -158,7 +158,7 @@ static void channel_row(struct mod_player *p, struct mod_channel *c,
         c->finetune = lo;
     }
     if (period) {
-        uint8_t note = note_of_period(period);
+        uint8_t note = mod_note_of_period(period);
 
         if (c->effect == 0x3 || c->effect == 0x5) {
             c->porta_target = period_of(c, note);

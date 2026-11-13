@@ -6,7 +6,7 @@
 
 #include <stdint.h>
 
-#define DIR_MAX_ENTRIES 100
+#define DIR_MAX_ENTRIES 255
 #define DIR_NAME_LEN 64
 
 struct dir_entry {
@@ -14,8 +14,15 @@ struct dir_entry {
     uint8_t is_dir;
 };
 
-extern struct dir_entry dir_entries[DIR_MAX_ENTRIES];
+/* Number of entries found by the last dir_read(). */
 extern uint8_t dir_count;
+
+/*
+ * Entry number index of the sorted list. The entries are kept in Attic
+ * RAM; the pointer refers to a one-entry buffer that the next call
+ * overwrites.
+ */
+const struct dir_entry *dir_entry(uint8_t index);
 
 /*
  * Read the current directory: sub-directories and music files, sorted by

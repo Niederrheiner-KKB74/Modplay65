@@ -86,6 +86,11 @@ void mod_out_start(uint8_t dma, const struct mod_file *mod, uint8_t index,
     }
 }
 
+uint8_t mod_out_dma_channel(uint8_t i)
+{
+    return dma_of[i];
+}
+
 void mod_out_stop(void)
 {
     uint8_t ch;

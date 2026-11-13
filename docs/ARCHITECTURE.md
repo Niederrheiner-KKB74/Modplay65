@@ -72,7 +72,7 @@ src/
     sid_tramp.s       trampoline that calls init/play in the sandbox
   ui/               directory listing (dir.[ch]); the screen layout and
                     key handling are still in main.c              (exists)
-  vis/              visualisers
+  vis/              scope.[ch], pattern.[ch]                      (exists)
 tests/              host-side unit tests for the portable code      (exists)
 tools/              helper scripts (disk image creation, test data)
 docs/               this documentation
@@ -82,12 +82,13 @@ docs/               this documentation
 
 | Region | Use |
 | --- | --- |
-| `$0002000-$000CFFF` (bank 0) | Program code, data, stack |
+| `$0000800-$00017FF` (bank 0) | Screen RAM (4000 bytes in 16-bit character mode) |
+| `$0002000-$000CFFF` (bank 0) | Program code, data, stack: 40 KB of 44 KB used (Nov 2026) |
 | `$0010000-$0011FFF` (bank 1) | DOS, do not touch |
 | `$0012000-$001F7FF` (bank 1) | 54 KB sample playback memory (below the colour RAM window at `$1F800`) |
 | `$0020000-$003FFFF` (banks 2-3) | ROM, write-protected |
 | `$0040000-$005FFFF` (banks 4-5) | 128 KB free chip RAM: sample playback memory, SID sandbox |
-| `$8000000-$87FFFFF` | 8 MB Attic RAM: whole-file storage, pattern data |
+| `$8000000-$87FFFFF` | 8 MB Attic RAM: whole-file storage, pattern data; directory list at `$87E0000` |
 
 The constraint that shapes everything: audio DMA can only play samples that
 sit in chip RAM (the first 384 KB), and each channel's playback window is
@@ -233,15 +234,21 @@ the audio mixer (`$D6F4/$D6F5`) is set to centre it **[verify]**.
 
 ## 8. User interface
 
-- 80-column text screen, written directly to screen and colour RAM. The
-  current version uses the ROM character set; a custom set and a
-  full-colour graphics area for the visualiser are planned.
-- Current layout: file list (top left), player panel with position, level
-  meters and settings (bottom left), sample list (right), help line.
+- 80-column screen in the VIC-IV's 16-bit character mode, written directly
+  to screen and colour RAM (two bytes per cell each). Characters 0-255
+  are a RAM copy of the ROM set with lower and upper case.
+- Pixel canvas: characters from 256 on have their glyphs in the same RAM
+  block, so a rectangle of cells can be drawn into pixel by pixel (one
+  colour per cell). 576 cells, used as 4 traces of 288 x 32 pixels.
+- Layout: file list (top left), player panel with position, level meters
+  and settings (bottom left), and a right-hand panel that V switches
+  between oscilloscopes, pattern view and sample list.
 - Input: keyboard, read from the hardware key queue. Mouse support is an
   optional later step.
-- Screen updates happen in the main loop between ticks and must stay short
-  as long as the tick is polled (section 6.4).
+- Screen updates happen in the main loop between ticks. Because the tick
+  is polled (section 6.4), no pass through the loop may take longer than
+  one video frame; the scopes therefore draw one trace per pass and avoid
+  multiplications.
 
 ### File access
 
@@ -255,11 +262,11 @@ collections usually sit and it is the faster path. D81 support follows later.
 
 | Visualiser | MOD | SID |
 | --- | --- | --- |
-| Level meters per voice | channel volume and note triggers | from register shadow, see below |
-| Oscilloscope per voice | sample bytes read at the channel's current address (`$D72A-$D72C`) | not available per voice |
-| Master oscilloscope | mixer read-back `$D6FC/$D6FD` **[verify]** | same |
-| Note display | period → note per channel | frequency register → note per voice |
-| Pattern view | scrolling rows | not applicable |
+| Level meters per voice | done: note triggers and volume | from register shadow, see below |
+| Oscilloscope per voice | done: sample bytes at the channel's playhead, scaled by volume | not available per voice |
+| Master oscilloscope | planned: mixer read-back `$D6FC/$D6FD` **[verify]** | same |
+| Note display | done | frequency register → note per voice |
+| Pattern view | done | not applicable |
 
 SID registers are write-only, so per-voice data for SID tunes needs a shadow
 copy. Option: while the play routine runs, map RAM instead of I/O at

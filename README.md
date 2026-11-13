@@ -8,8 +8,8 @@ visualisation.
 
 **Status: MOD playback works.** The program lists the MOD files on the SD
 card, plays 4-channel modules with all common ProTracker effects and shows
-position, level meters and the sample list. SID playback and the real
-visualisers are not started.
+an oscilloscope per channel, the running pattern, level meters and the
+sample list. SID playback is not started.
 
 ## Keys
 
@@ -21,6 +21,7 @@ visualisers are not started.
 | Cursor left/right | previous / next song position |
 | + / - | volume |
 | , / . | stereo separation |
+| V | switch the right-hand panel: oscilloscopes, pattern, samples |
 | S | second page of the sample list |
 | Q | leave (asks first); restarts BASIC, the program is then gone from memory |
 

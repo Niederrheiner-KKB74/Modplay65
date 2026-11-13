@@ -79,6 +79,12 @@ void mod_read_row(uint8_t pattern, uint8_t row, uint8_t *dst);
 void mod_player_init(struct mod_player *p, const struct mod_info *info,
                      uint8_t order);
 
+/*
+ * Index (0..35, C-1..B-3) of the note closest to an Amiga period, for
+ * display.
+ */
+uint8_t mod_note_of_period(uint16_t period);
+
 /* Advance the song by one tick. */
 void mod_player_tick(struct mod_player *p);
 

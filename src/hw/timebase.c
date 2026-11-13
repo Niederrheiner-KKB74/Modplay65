@@ -17,6 +17,7 @@ static uint16_t lines_per_frame;
 static uint32_t threshold;
 static uint16_t last_line;
 static uint32_t acc;
+static uint8_t frame_flag;
 
 static uint16_t raster(void)
 {
@@ -48,6 +49,9 @@ uint8_t timebase_poll(uint8_t bpm)
     uint16_t delta;
 
     if (now != last_line) {
+        if (now < last_line) {
+            frame_flag = 1;
+        }
         delta = (uint16_t)(now >= last_line ? now - last_line
                                             : now + lines_per_frame - last_line);
         if (delta > lines_per_frame) { /* counter beyond the expected range */
@@ -58,6 +62,15 @@ uint8_t timebase_poll(uint8_t bpm)
     }
     if (acc >= threshold) {
         acc -= threshold;
+        return 1;
+    }
+    return 0;
+}
+
+uint8_t timebase_new_frame(void)
+{
+    if (frame_flag) {
+        frame_flag = 0;
         return 1;
     }
     return 0;

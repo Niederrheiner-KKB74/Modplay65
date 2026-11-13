@@ -17,4 +17,10 @@ void timebase_init(void);
 /* Returns 1 when a tick of 2.5 / bpm seconds has elapsed, else 0. */
 uint8_t timebase_poll(uint8_t bpm);
 
+/*
+ * Returns 1 once per video frame (when the raster counter has wrapped
+ * since the last call that returned 1). Updated by timebase_poll().
+ */
+uint8_t timebase_new_frame(void);
+
 #endif
