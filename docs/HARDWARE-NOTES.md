@@ -112,10 +112,20 @@ For an Amiga period `p`: `FREQ ≈ 1469309 / p`.
   per scan line (about 0.5 MHz), so CIA-based timing runs at the wrong
   speed there. Modplay65 uses the raster line counter as timebase.
 
+## Screen
+
+- `$D060-$D062`: screen RAM pointer; `$D058`: characters per line step.
+- `$D068-$D06A`: character set pointer. `$001000` selects the ROM set with
+  upper case and graphics, `$001800` the set with lower and upper case
+  (the default with ROM 920413). Modplay65 sets `$001800`.
+- Colour RAM is at `$FF80000`.
+
 ## Keyboard
 
 - `$D610`: ASCII code of the oldest queued key, 0 if none; write any value
   to remove it from the queue. Needs neither KERNAL nor interrupts.
+  Cursor keys arrive as `$11` down, `$91` up, `$1D` right, `$9D` left
+  **[verify on hardware]**.
 
 ## Toolchain behaviour
 

@@ -7,7 +7,8 @@ add_executable(modplay65
     mod/mod_load.c
     mod/mod_out.c
     mod/mod_play.c
-    mod/mod_tables.c)
+    mod/mod_tables.c
+    ui/dir.c)
 
 target_include_directories(modplay65 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_options(modplay65 PRIVATE -Os -Wall -Wextra -Wshadow)

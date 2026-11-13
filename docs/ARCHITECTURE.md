@@ -70,7 +70,8 @@ src/
     psid.[ch]         PSID header parsing (portable)
     sid_host.[ch]     sandbox bank setup, song selection
     sid_tramp.s       trampoline that calls init/play in the sandbox
-  ui/               screen layout, file browser, input handling
+  ui/               directory listing (dir.[ch]); the screen layout and
+                    key handling are still in main.c              (exists)
   vis/              visualisers
 tests/              host-side unit tests for the portable code      (exists)
 tools/              helper scripts (disk image creation, test data)
@@ -232,14 +233,15 @@ the audio mixer (`$D6F4/$D6F5`) is set to centre it **[verify]**.
 
 ## 8. User interface
 
-- 80-column text screen with a custom character set; the visualiser area
-  uses full-colour character mode so it can show real graphics.
-- Layout: file browser, song information (title, format, sample or SID
-  details), transport and position, visualiser.
-- Input: keyboard first. Mouse support (mega65-libc has a mouse module) is
-  an optional later step.
-- Screen updates are synchronised to the video frame and never block the
-  replay interrupt.
+- 80-column text screen, written directly to screen and colour RAM. The
+  current version uses the ROM character set; a custom set and a
+  full-colour graphics area for the visualiser are planned.
+- Current layout: file list (top left), player panel with position, level
+  meters and settings (bottom left), sample list (right), help line.
+- Input: keyboard, read from the hardware key queue. Mouse support is an
+  optional later step.
+- Screen updates happen in the main loop between ticks and must stay short
+  as long as the tick is polled (section 6.4).
 
 ### File access
 

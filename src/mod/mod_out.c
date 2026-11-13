@@ -20,6 +20,46 @@ static uint32_t freq_of(uint16_t period)
     return 1469309UL / period;
 }
 
+static uint8_t master = 64;
+static uint8_t separation = 4;
+
+/* Engine volume 0..64 to DMA volume 0..128, with cross-feed. */
+static void set_volume(uint8_t dma, uint8_t volume)
+{
+    uint8_t v = (uint8_t)(((uint16_t)volume * master) >> 5);
+
+    audio_dma_set_volume(dma, v,
+                         (uint8_t)(((uint16_t)v * (uint8_t)(4 - separation)) >> 2));
+}
+
+void mod_out_set_master(uint8_t volume)
+{
+    master = volume > 64 ? 64 : volume;
+}
+
+void mod_out_set_separation(uint8_t quarters)
+{
+    separation = quarters > 4 ? 4 : quarters;
+}
+
+void mod_out_refresh(const struct mod_player *p)
+{
+    uint8_t i;
+
+    for (i = 0; i < MOD_CHANNELS; ++i) {
+        set_volume(dma_of[i], p->ch[i].out_volume);
+    }
+}
+
+void mod_out_mute(void)
+{
+    uint8_t ch;
+
+    for (ch = 0; ch < AUDIO_DMA_CHANNELS; ++ch) {
+        audio_dma_set_volume(ch, 0, 0);
+    }
+}
+
 /* Rate reduction of the sample each engine channel is playing. */
 static uint8_t shift_of[MOD_CHANNELS];
 
@@ -62,7 +102,6 @@ void mod_out_apply(const struct mod_player *p, const struct mod_file *mod)
     for (i = 0; i < MOD_CHANNELS; ++i) {
         const struct mod_channel *c = &p->ch[i];
         uint8_t dma = dma_of[i];
-        uint8_t volume = (uint8_t)(c->out_volume << 1);
 
         if (c->out_flags & MOD_OUT_STOP) {
             audio_dma_stop(dma);
@@ -72,7 +111,7 @@ void mod_out_apply(const struct mod_player *p, const struct mod_file *mod)
         }
         if (c->out_flags & MOD_OUT_TRIGGER) {
             shift_of[i] = mod->sample_shift[c->out_sample - 1];
-            audio_dma_set_volume(dma, volume, 0);
+            set_volume(dma, c->out_volume);
             mod_out_start(dma, mod, (uint8_t)(c->out_sample - 1),
                           c->out_offset, freq_of(c->out_period) >> shift_of[i]);
             continue;
@@ -81,7 +120,7 @@ void mod_out_apply(const struct mod_player *p, const struct mod_file *mod)
             audio_dma_set_freq(dma, freq_of(c->out_period) >> shift_of[i]);
         }
         if (c->out_flags & MOD_OUT_VOLUME) {
-            audio_dma_set_volume(dma, volume, 0);
+            set_volume(dma, c->out_volume);
         }
     }
 }

@@ -19,6 +19,21 @@ void mod_out_apply(const struct mod_player *p, const struct mod_file *mod);
 void mod_out_start(uint8_t dma, const struct mod_file *mod, uint8_t index,
                    uint16_t offset, uint32_t freq);
 
+/* Master volume, 0..64 (default 64). */
+void mod_out_set_master(uint8_t volume);
+
+/*
+ * Stereo separation in quarters: 4 = full left/right (default),
+ * 0 = mono. Lower values feed part of each channel to the other side.
+ */
+void mod_out_set_separation(uint8_t quarters);
+
+/* Write the volume of all channels again (after a setting changed). */
+void mod_out_refresh(const struct mod_player *p);
+
+/* Set all channel volumes to zero without stopping the samples (pause). */
+void mod_out_mute(void);
+
 /* Silence all channels. */
 void mod_out_stop(void);
 

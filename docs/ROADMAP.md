@@ -63,11 +63,20 @@ built on top of them.
 
 ## M4 - User interface
 
-- [ ] Screen layout and custom character set
-- [ ] File browser with directory navigation
-- [ ] Transport: play, pause, stop, next and previous song position
-- [ ] Song information panel
-- [ ] Stereo separation and volume settings
+- [x] Screen layout with frames and colours: file list, player panel,
+      sample list (ROM character set, lower/upper case)
+- [x] File browser: MOD files and sub-directories of the SD card, sorted
+- [x] Transport: play, pause, previous and next song position
+- [x] Song information and sample list with markers for playing samples
+- [x] Volume and stereo separation settings
+- [x] Simple level meters per channel
+- [x] Automatic advance to the next file when a song ends
+- [ ] Confirm on real hardware (tested in Xemu: browsing, loading, pause,
+      seeking, settings, auto-advance)
+- [ ] Sub-directories and long file names: untested, Xemu's virtual SD
+      card only offers 8.3 names in one directory
+- [ ] Custom character set
+- [ ] More than 100 directory entries
 
 ## M5 - Visualisation for MOD
 

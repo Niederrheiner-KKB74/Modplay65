@@ -1,8 +1,7 @@
 /*
  * Modplay65 - MOD and SID player for the MEGA65.
  *
- * Milestone 3: load a MOD file from the SD card, show what is in it,
- * audition single samples and play the song.
+ * Main screen: file browser, player panel and sample list.
  *
  * The program uses no KERNAL services: text goes straight to screen RAM
  * and keys come from the hardware key queue. It does not return to BASIC;
@@ -19,6 +18,7 @@
 #include "mod/mod_file.h"
 #include "mod/mod_out.h"
 #include "mod/mod_play.h"
+#include "ui/dir.h"
 
 #ifndef MODPLAY65_VERSION
 #define MODPLAY65_VERSION "dev"
@@ -26,199 +26,53 @@
 
 /* ASCII codes delivered by the hardware key queue. */
 #define KEY_RETURN 0x0D
-#define KEY_DELETE 0x14
 #define KEY_DOWN 0x11
 #define KEY_UP 0x91
 #define KEY_RIGHT 0x1D
 #define KEY_LEFT 0x9D
 
-/* Samples are auditioned at the pitch of note C-2 (Amiga period 428). */
-#define AUDITION_FREQ AUDIO_DMA_FREQ(8287)
-
-#define LIST_ROW 7
-#define LIST_ROWS 16
-#define COLUMN_WIDTH 40
-#define ENTRY_WIDTH 39
+/* Screen layout (80 x 25). */
+#define FILES_X 0
+#define FILES_Y 1
+#define FILES_W 40
+#define FILES_H 14
+#define FILES_ROWS (FILES_H - 2)
+#define PLAYER_X 0
+#define PLAYER_Y 15
+#define PLAYER_W 40
+#define PLAYER_H 9
+#define SAMPLES_X 40
+#define SAMPLES_Y 1
+#define SAMPLES_W 40
+#define SAMPLES_H 23
+#define SAMPLES_ROWS (SAMPLES_H - 2)
 #define STATUS_ROW 24
+#define BAR_LEN 30
+
+/* Colours. */
+#define C_BACK COL_BLACK
+#define C_FRAME COL_LBLUE
+#define C_TEXT COL_LGREY
+#define C_BRIGHT COL_WHITE
+#define C_LABEL COL_CYAN
+#define C_TITLE COL_YELLOW
+#define C_DIR COL_LGREEN
+#define C_BAR COL_LGREEN
+#define C_ERROR COL_PINK
 
 static struct mod_file mod;
 static struct mod_player player;
-static char filename[32] = "AXELF.MOD";
 
-static uint8_t to_upper(uint8_t c)
-{
-    return (c >= 'a' && c <= 'z') ? (uint8_t)(c - 0x20) : c;
-}
-
-static uint8_t wait_key(void)
-{
-    uint8_t key;
-
-    do {
-        key = keyboard_poll();
-    } while (key == 0);
-    return key;
-}
-
-static void status(const char *text)
-{
-    screen_clear_span(0, STATUS_ROW, 79);
-    screen_puts(0, STATUS_ROW, text);
-}
-
-static void all_off(void)
-{
-    uint8_t ch;
-
-    for (ch = 0; ch < AUDIO_DMA_CHANNELS; ++ch) {
-        audio_dma_stop(ch);
-    }
-}
-
-/* Edit the file name on the given row. */
-static void input_filename(uint8_t row)
-{
-    uint8_t len = 0;
-    uint8_t key;
-    uint8_t fresh = 1; /* the first typed character replaces the old name */
-
-    while (filename[len]) {
-        ++len;
-    }
-    screen_puts(0, row, "File on SD card:");
-    for (;;) {
-        screen_clear_span(17, row, sizeof(filename) + 1);
-        screen_puts(17, row, filename);
-        screen_reverse((uint8_t)(17 + len), row, 1, 1);
-        key = wait_key();
-        if (key == KEY_RETURN && len) {
-            break;
-        }
-        if (key == KEY_DELETE && len) {
-            filename[--len] = 0;
-            fresh = 0;
-        } else if (key > ' ' && key < 0x7F && (fresh || len < sizeof(filename) - 1)) {
-            if (fresh) {
-                len = 0;
-                fresh = 0;
-            }
-            filename[len++] = (char)to_upper(key);
-            filename[len] = 0;
-        }
-    }
-    screen_reverse((uint8_t)(17 + len), row, 1, 0);
-}
-
-static void show_progress(uint32_t bytes)
-{
-    screen_dec(8, STATUS_ROW, bytes, 8);
-}
-
-static uint8_t entry_x(uint8_t index)
-{
-    return index < LIST_ROWS ? 0 : COLUMN_WIDTH;
-}
-
-static uint8_t entry_y(uint8_t index)
-{
-    return (uint8_t)(LIST_ROW + (index < LIST_ROWS ? index : index - LIST_ROWS));
-}
-
-static void show_module(void)
-{
-    const struct mod_info *info = &mod.info;
-    uint8_t i;
-
-    screen_clear();
-    screen_puts(0, 0, "Modplay65 " MODPLAY65_VERSION);
-    screen_puts(0, 2, "Title:");
-    screen_puts(10, 2, info->name);
-    screen_puts(40, 2, "File:");
-    screen_puts(50, 2, filename);
-    screen_puts(0, 3, "Format:");
-    screen_puts(10, 3, info->signature[0] ? info->signature : "old (15)");
-    screen_puts(40, 3, "Size:");
-    screen_dec(50, 3, mod.size, 7);
-    screen_puts(58, 3, "bytes");
-    screen_puts(0, 4, "Length:");
-    screen_dec(10, 4, info->song_length, 3);
-    screen_puts(14, 4, "positions");
-    screen_dec(25, 4, info->num_patterns, 3);
-    screen_puts(29, 4, "patterns");
-    screen_puts(40, 4, "Samples:");
-    screen_dec(50, 4, info->sample_bytes, 7);
-    screen_puts(58, 4, "bytes");
-
-    if (mod.reduced) {
-        screen_dec(0, 5, mod.reduced, 2);
-        screen_puts(3, 5, "large sample(s) stored at reduced rate (h = half, q = quarter) to fit memory");
-    }
-    screen_puts(0, 6, "No Name                   Length Vol L");
-    screen_puts(COLUMN_WIDTH, 6, "No Name                   Length Vol L");
-    for (i = 0; i < info->num_samples; ++i) {
-        const struct mod_sample *s = &info->sample[i];
-        uint8_t x = entry_x(i);
-        uint8_t y = entry_y(i);
-
-        screen_dec(x, y, (uint32_t)i + 1, 2);
-        screen_puts((uint8_t)(x + 3), y, s->name);
-        if (s->length) {
-            screen_dec((uint8_t)(x + 26), y, s->length, 6);
-            screen_dec((uint8_t)(x + 33), y, s->volume, 3);
-            if (s->loop_length) {
-                screen_puts((uint8_t)(x + 37), y, "*");
-            }
-            if (mod.sample_shift[i]) {
-                screen_puts((uint8_t)(x + 38), y,
-                            mod.sample_shift[i] == 1 ? "h" : "q");
-            }
-        }
-    }
-}
-
-static void show_selection(uint8_t index, uint8_t on)
-{
-    const struct mod_sample *s = &mod.info.sample[index];
-
-    screen_reverse(entry_x(index), entry_y(index), ENTRY_WIDTH, on);
-    if (!on) {
-        return;
-    }
-    screen_clear_span(0, STATUS_ROW - 1, 79);
-    screen_puts(0, STATUS_ROW - 1, "Sample    at $       loop           finetune");
-    screen_dec(7, STATUS_ROW - 1, (uint32_t)index + 1, 2);
-    screen_hex(14, STATUS_ROW - 1, mod.sample_addr[index], 6);
-    if (s->loop_length) {
-        screen_dec(26, STATUS_ROW - 1, s->loop_start, 5);
-        screen_puts(31, STATUS_ROW - 1, "+");
-        screen_dec(32, STATUS_ROW - 1, s->loop_length, 5);
-    } else {
-        screen_puts(26, STATUS_ROW - 1, "none");
-    }
-    if (s->finetune < 0) {
-        screen_puts(46, STATUS_ROW - 1, "-");
-        screen_dec(47, STATUS_ROW - 1, (uint32_t)(-s->finetune), 1);
-    } else {
-        screen_dec(46, STATUS_ROW - 1, (uint32_t)s->finetune, 2);
-    }
-}
-
-static void play_sample(uint8_t index)
-{
-    const struct mod_sample *s = &mod.info.sample[index];
-    uint8_t ch;
-
-    all_off();
-    if (s->length == 0) {
-        return;
-    }
-    /* one channel per side */
-    for (ch = 0; ch < AUDIO_DMA_CHANNELS; ch += 2) {
-        audio_dma_set_volume(ch, (uint8_t)(s->volume * 2), 0);
-        mod_out_start(ch, &mod, index, 0,
-                      AUDITION_FREQ >> mod.sample_shift[index]);
-    }
-}
+static uint8_t loaded;         /* a module is in memory               */
+static uint8_t playing;        /* the song is running (not paused)    */
+static uint8_t sel;            /* selected entry in the file list     */
+static uint8_t top;            /* first visible entry                 */
+static uint8_t current = 0xFF; /* entry that is loaded, 0xFF = none   */
+static uint8_t sample_page;    /* 0 = samples 1-21, 1 = 22-31         */
+static uint8_t master = 64;    /* 0..64                               */
+static uint8_t separation = 4; /* 0..4                                */
+static uint8_t level[MOD_CHANNELS];
+static uint8_t marked[MOD_CHANNELS]; /* sample shown as playing, 0 = none */
 
 /* Pattern rows are read from the copy of the file in Attic RAM. */
 void mod_read_row(uint8_t pattern, uint8_t row, uint8_t *dst)
@@ -229,161 +83,459 @@ void mod_read_row(uint8_t pattern, uint8_t row, uint8_t *dst)
           (uint32_t)(uintptr_t)dst, MOD_ROW_BYTES);
 }
 
-#define PLAY_ROW 9
-
-static void show_position(void)
+static void status(const char *text, uint8_t colour)
 {
-    uint8_t i;
+    screen_putn(0, STATUS_ROW, text, 79);
+    screen_colour(0, STATUS_ROW, 79, colour);
+}
 
-    /* The engine has already moved on to the next row: show what plays. */
-    screen_dec(9, PLAY_ROW, (uint32_t)player.order + 1, 3);
-    screen_dec(30, PLAY_ROW, player.pattern, 3);
-    screen_dec(40, PLAY_ROW, player.row, 2);
-    screen_dec(51, PLAY_ROW, player.speed, 2);
-    screen_dec(60, PLAY_ROW, player.tempo, 3);
-    for (i = 0; i < MOD_CHANNELS; ++i) {
-        const struct mod_channel *c = &player.ch[i];
-        uint8_t y = (uint8_t)(PLAY_ROW + 2 + i);
-        uint8_t bar = (uint8_t)(c->out_period ? c->out_volume >> 1 : 0);
+static void help(void)
+{
+    status("RETURN play  SPACE pause  CRSR file/position  +- volume  ,. stereo  "
+           "S samples", C_LABEL);
+}
 
-        screen_dec(18, y, c->sample, 2);
-        screen_dec(29, y, c->out_period, 4);
-        screen_dec(42, y, c->out_volume, 2);
-        screen_clear_span(46, y, 33);
-        screen_clear_span(46, y, bar);
-        screen_reverse(46, y, bar, 1);
+/* ---- file list ------------------------------------------------------ */
+
+static void draw_file_row(uint8_t row)
+{
+    uint8_t index = (uint8_t)(top + row);
+    uint8_t y = (uint8_t)(FILES_Y + 1 + row);
+    uint8_t x = FILES_X + 1;
+
+    if (index >= dir_count) {
+        screen_putn(x, y, "", FILES_W - 2);
+        return;
+    }
+    screen_poke(x, y, (uint8_t)(index == current ? 0x3E : 0x20)); /* > */
+    screen_putn((uint8_t)(x + 1), y, dir_entries[index].name, FILES_W - 8);
+    screen_putn((uint8_t)(x + FILES_W - 7), y,
+                dir_entries[index].is_dir ? "<DIR>" : "", 5);
+    screen_colour(x, y, FILES_W - 2,
+                  dir_entries[index].is_dir ? C_DIR : C_TEXT);
+    screen_reverse(x, y, FILES_W - 2, (uint8_t)(index == sel));
+}
+
+static void draw_files(void)
+{
+    uint8_t row;
+
+    if (sel < top) {
+        top = sel;
+    } else if (sel >= top + FILES_ROWS) {
+        top = (uint8_t)(sel - FILES_ROWS + 1);
+    }
+    for (row = 0; row < FILES_ROWS; ++row) {
+        draw_file_row(row);
     }
 }
 
-/* Play the song from the first position until the user stops it. */
-static void play_song(void)
+static void read_directory(void)
 {
-    uint8_t key;
-    uint8_t i;
-
-    all_off();
-    screen_clear();
-    screen_puts(0, 0, "Modplay65 " MODPLAY65_VERSION);
-    screen_puts(0, 2, "Title:");
-    screen_puts(10, 2, mod.info.name);
-    screen_puts(0, PLAY_ROW, "Position");
-    screen_puts(13, PLAY_ROW, "of");
-    screen_dec(16, PLAY_ROW, mod.info.song_length, 3);
-    screen_puts(22, PLAY_ROW, "Pattern");
-    screen_puts(36, PLAY_ROW, "Row");
-    screen_puts(45, PLAY_ROW, "Speed");
-    screen_puts(56, PLAY_ROW, "BPM");
-    for (i = 0; i < MOD_CHANNELS; ++i) {
-        uint8_t y = (uint8_t)(PLAY_ROW + 2 + i);
-
-        screen_puts(0, y, "Channel    sample     period      volume");
-        screen_dec(8, y, (uint32_t)i + 1, 1);
+    status("Reading directory ...", C_LABEL);
+    dir_read();
+    sel = 0;
+    top = 0;
+    current = 0xFF;
+    draw_files();
+    if (dir_count == 0) {
+        status("No MOD files or directories found here.", C_ERROR);
+    } else {
+        help();
     }
-    status("SPACE = stop   cursor left/right or -/+ = previous/next position");
+}
 
-    mod_player_init(&player, &mod.info, 0);
-    timebase_init();
-    for (;;) {
-        if (timebase_poll(player.tempo)) {
-            mod_player_tick(&player);
-            mod_out_apply(&player, &mod);
-            if (player.row_started) {
-                show_position();
-            }
+/* ---- sample list ---------------------------------------------------- */
+
+static void draw_sample_row(uint8_t row)
+{
+    uint8_t index = (uint8_t)(sample_page * SAMPLES_ROWS + row);
+    uint8_t y = (uint8_t)(SAMPLES_Y + 1 + row);
+    uint8_t x = SAMPLES_X + 1;
+    const struct mod_sample *s;
+
+    screen_putn(x, y, "", SAMPLES_W - 2);
+    if (!loaded || index >= mod.info.num_samples) {
+        return;
+    }
+    s = &mod.info.sample[index];
+    screen_dec((uint8_t)(x + 2), y, (uint32_t)index + 1, 2);
+    screen_putn((uint8_t)(x + 5), y, s->name, MOD_SAMPLE_NAME_LEN);
+    if (s->length) {
+        screen_dec((uint8_t)(x + 28), y, s->length, 6);
+        if (s->loop_length) {
+            screen_poke((uint8_t)(x + 35), y, 0x2A); /* * = looped */
         }
-        key = keyboard_poll();
-        if (key == 0) {
+        if (mod.sample_shift[index]) {
+            screen_puts((uint8_t)(x + 36), y,
+                        mod.sample_shift[index] == 1 ? "h" : "q");
+        }
+    }
+    screen_colour(x, y, SAMPLES_W - 2, s->length ? C_TEXT : C_FRAME);
+}
+
+static void draw_samples(void)
+{
+    uint8_t row;
+
+    for (row = 0; row < SAMPLES_ROWS; ++row) {
+        draw_sample_row(row);
+    }
+    for (row = 0; row < MOD_CHANNELS; ++row) {
+        marked[row] = 0;
+    }
+}
+
+/* Show next to each sample which channel is playing it. */
+static void mark_samples(void)
+{
+    uint8_t i;
+    uint8_t first = (uint8_t)(sample_page * SAMPLES_ROWS + 1);
+
+    for (i = 0; i < MOD_CHANNELS; ++i) {
+        uint8_t now = player.ch[i].sample;
+
+        if (now == marked[i]) {
             continue;
         }
-        if (key == ' ' || key == KEY_RETURN) {
-            break;
+        if (marked[i] >= first && marked[i] < first + SAMPLES_ROWS) {
+            draw_sample_row((uint8_t)(marked[i] - first));
         }
-        if (key == KEY_RIGHT || key == '+' || key == KEY_LEFT || key == '-') {
-            uint8_t order = player.order;
+        marked[i] = now;
+    }
+    for (i = 0; i < MOD_CHANNELS; ++i) {
+        uint8_t now = marked[i];
 
-            if (key == KEY_RIGHT || key == '+') {
-                order = (uint8_t)(order + 1 < mod.info.song_length ? order + 1 : 0);
-            } else if (order) {
-                --order;
-            }
-            mod_out_stop();
-            mod_player_init(&player, &mod.info, order);
+        if (now >= first && now < first + SAMPLES_ROWS) {
+            uint8_t y = (uint8_t)(SAMPLES_Y + 1 + now - first);
+
+            screen_poke(SAMPLES_X + 1, y, (uint8_t)('1' + i));
+            screen_colour(SAMPLES_X + 1, y, SAMPLES_W - 2, C_BRIGHT);
         }
     }
-    mod_out_stop();
 }
 
-/* Returns when the user asks for another file. */
-static void browse_samples(void)
+/* ---- player panel --------------------------------------------------- */
+
+#define PX (PLAYER_X + 1)
+#define PY (PLAYER_Y + 1)
+
+static void draw_settings(void)
 {
-    uint8_t count = mod.info.num_samples;
-    uint8_t sel = 0;
-    uint8_t key;
+    screen_puts(PX, PY + 6, "Volume");
+    screen_dec(PX + 7, PY + 6, ((uint16_t)master * 100) >> 6, 3);
+    screen_puts(PX + 10, PY + 6, "%");
+    screen_puts(PX + 14, PY + 6, "Stereo");
+    screen_dec(PX + 21, PY + 6, (uint16_t)separation * 25, 3);
+    screen_puts(PX + 24, PY + 6, "%");
+    screen_putn(PX + 28, PY + 6,
+                !loaded ? "" : playing ? "PLAYING" : "PAUSED", 8);
+    screen_colour(PX, PY + 6, 27, C_LABEL);
+    screen_colour(PX + 28, PY + 6, 8, playing ? C_BAR : C_TITLE);
+}
 
-    for (;;) {
-      show_module();
-      status("P = play song   Cursor or +/- = select sample   SPACE = hear it   S = stop   N = new file");
-      show_selection(sel, 1);
-      for (;;) {
-        uint8_t next = sel;
+static void draw_player_frame(void)
+{
+    uint8_t i;
 
-        key = to_upper(wait_key());
-        switch (key) {
-        case '+':
-        case KEY_DOWN: next = (uint8_t)(sel + 1 < count ? sel + 1 : 0); break;
-        case '-':
-        case KEY_UP: next = (uint8_t)(sel ? sel - 1 : count - 1); break;
-        case KEY_RIGHT:
-        case KEY_LEFT:
-            if (sel >= LIST_ROWS) {
-                next = (uint8_t)(sel - LIST_ROWS);
-            } else if (sel + LIST_ROWS < count) {
-                next = (uint8_t)(sel + LIST_ROWS);
+    for (i = 0; i < PLAYER_H - 2; ++i) {
+        screen_putn(PX, (uint8_t)(PY + i), "", PLAYER_W - 2);
+        screen_colour(PX, (uint8_t)(PY + i), PLAYER_W - 2, C_TEXT);
+    }
+    if (loaded) {
+        screen_putn(PX, PY, mod.info.name[0] ? mod.info.name : "(no title)",
+                    MOD_NAME_LEN);
+        screen_colour(PX, PY, MOD_NAME_LEN, C_TITLE);
+        screen_puts(PX + 22, PY,
+                    mod.info.signature[0] ? mod.info.signature : "15 ins");
+        screen_dec(PX + 28, PY, mod.size >> 10, 4);
+        screen_puts(PX + 33, PY, "KB");
+        screen_puts(PX, PY + 1, "Pos");
+        screen_puts(PX + 7, PY + 1, "/");
+        screen_puts(PX + 13, PY + 1, "Pat");
+        screen_puts(PX + 22, PY + 1, "Row");
+        screen_puts(PX + 32, PY + 1, "/");
+        screen_colour(PX, PY + 1, PLAYER_W - 2, C_LABEL);
+        screen_dec(PX + 8, PY + 1, mod.info.song_length, 3);
+        for (i = 0; i < MOD_CHANNELS; ++i) {
+            screen_dec(PX, (uint8_t)(PY + 2 + i), (uint32_t)i + 1, 1);
+            screen_colour(PX, (uint8_t)(PY + 2 + i), 7, C_LABEL);
+            screen_colour(PX + 7, (uint8_t)(PY + 2 + i), BAR_LEN, C_BAR);
+        }
+    } else {
+        screen_puts(PX, PY + 2, "Select a MOD file and press RETURN.");
+    }
+    draw_settings();
+}
+
+static void draw_position(void)
+{
+    screen_dec(PX + 4, PY + 1, (uint32_t)player.order + 1, 3);
+    screen_dec(PX + 17, PY + 1, player.pattern, 3);
+    screen_dec(PX + 26, PY + 1, player.row, 2);
+    screen_dec(PX + 30, PY + 1, player.speed, 2);
+    screen_dec(PX + 33, PY + 1, player.tempo, 3);
+}
+
+/* Level meters: jump up on a note, fall back between notes. */
+static void draw_levels(void)
+{
+    uint8_t i;
+
+    for (i = 0; i < MOD_CHANNELS; ++i) {
+        const struct mod_channel *c = &player.ch[i];
+        uint8_t y = (uint8_t)(PY + 2 + i);
+
+        if (c->out_flags & MOD_OUT_TRIGGER) {
+            level[i] = c->out_volume;
+            screen_dec(PX + 2, y, c->sample, 2);
+        } else if (level[i] > 3) {
+            level[i] = (uint8_t)(level[i] - 3);
+        } else {
+            level[i] = 0;
+        }
+        if (level[i] > c->out_volume) {
+            level[i] = c->out_volume;
+        }
+        screen_bar(PX + 7, y, BAR_LEN, (uint8_t)((level[i] * 15U) >> 5));
+    }
+}
+
+/* ---- playback control ----------------------------------------------- */
+
+static void stop(void)
+{
+    mod_out_stop();
+    playing = 0;
+}
+
+static void restart_at(uint8_t order)
+{
+    uint8_t i;
+
+    mod_out_stop();
+    mod_player_init(&player, &mod.info, order);
+    for (i = 0; i < MOD_CHANNELS; ++i) {
+        level[i] = 0;
+    }
+    timebase_init();
+    playing = 1;
+    draw_settings();
+}
+
+static void show_progress(uint32_t bytes)
+{
+    screen_dec(8, STATUS_ROW, bytes >> 10, 5);
+}
+
+/* Load and start the file at index. Returns 1 on success. */
+static uint8_t load_and_play(uint8_t index)
+{
+    enum mod_file_error err;
+    uint8_t old = current;
+
+    stop();
+    loaded = 0;
+    current = 0xFF;
+    status("Loading       KB", C_LABEL);
+    screen_putn(18, STATUS_ROW, dir_entries[index].name, 60);
+    err = mod_file_load(dir_entries[index].name, &mod, show_progress);
+    if (err != MOD_FILE_OK) {
+        draw_player_frame();
+        draw_samples();
+        if (old != 0xFF) {
+            draw_files();
+        }
+        status("Error: ", C_ERROR);
+        screen_puts(7, STATUS_ROW, mod_file_error_text(err));
+        return 0;
+    }
+    loaded = 1;
+    current = index;
+    sample_page = 0;
+    draw_files();
+    draw_player_frame();
+    draw_samples();
+    if (mod.reduced) {
+        status("   large sample(s) stored at reduced rate to fit memory "
+               "(h = half, q = quarter)", C_TITLE);
+        screen_dec(0, STATUS_ROW, mod.reduced, 2);
+    } else {
+        help();
+    }
+    restart_at(0);
+    return 1;
+}
+
+/* Song finished: go on with the next file in the list, if there is one. */
+static void play_next_file(void)
+{
+    uint8_t i;
+    uint8_t index = current;
+
+    for (i = 0; i < dir_count; ++i) {
+        index = (uint8_t)(index + 1 < dir_count ? index + 1 : 0);
+        if (!dir_entries[index].is_dir) {
+            if (index == current) {
+                restart_at(0); /* the only file: play it again */
+                return;
             }
+            if (load_and_play(index)) {
+                return;
+            }
+        }
+    }
+    stop();
+    draw_settings();
+}
+
+static void activate_selection(void)
+{
+    if (sel >= dir_count) {
+        return;
+    }
+    if (dir_entries[sel].is_dir) {
+        stop();
+        loaded = 0;
+        if (!dir_enter(dir_entries[sel].name)) {
+            status("Error: cannot open directory", C_ERROR);
+        }
+        draw_player_frame();
+        draw_samples();
+        read_directory();
+    } else {
+        load_and_play(sel);
+    }
+}
+
+static void move_selection(int8_t delta)
+{
+    uint8_t old_top = top;
+    uint8_t old = sel;
+
+    if (dir_count == 0) {
+        return;
+    }
+    if (delta < 0) {
+        sel = (uint8_t)(sel ? sel - 1 : dir_count - 1);
+    } else {
+        sel = (uint8_t)(sel + 1 < dir_count ? sel + 1 : 0);
+    }
+    if (sel < top || sel >= top + FILES_ROWS) {
+        draw_files();
+    }
+    if (top == old_top) {
+        draw_file_row((uint8_t)(old - top));
+        draw_file_row((uint8_t)(sel - top));
+    }
+}
+
+static void handle_key(uint8_t key)
+{
+    switch (key) {
+    case KEY_DOWN: move_selection(1); break;
+    case KEY_UP: move_selection(-1); break;
+    case KEY_RETURN: activate_selection(); break;
+    case ' ':
+        if (!loaded) {
             break;
-        case ' ':
-        case KEY_RETURN: play_sample(sel); break;
-        case 'S': all_off(); break;
-        case 'N': all_off(); return;
-        default: break;
         }
-        if (key == 'P') {
-            play_song();
-            break; /* redraw the sample list */
+        playing = !playing;
+        if (playing) {
+            mod_out_refresh(&player);
+            timebase_init();
+        } else {
+            mod_out_mute();
         }
-        if (next != sel) {
-            show_selection(sel, 0);
-            sel = next;
-            show_selection(sel, 1);
+        draw_settings();
+        break;
+    case KEY_RIGHT:
+        if (loaded) {
+            restart_at((uint8_t)(player.order + 1 < mod.info.song_length
+                                     ? player.order + 1 : 0));
         }
-      }
+        break;
+    case KEY_LEFT:
+        if (loaded) {
+            restart_at((uint8_t)(player.order ? player.order - 1 : 0));
+        }
+        break;
+    case '+':
+    case '-':
+        if (key == '+') {
+            master = (uint8_t)(master <= 56 ? master + 8 : 64);
+        } else {
+            master = (uint8_t)(master >= 8 ? master - 8 : 0);
+        }
+        mod_out_set_master(master);
+        if (playing) {
+            mod_out_refresh(&player);
+        }
+        draw_settings();
+        break;
+    case ',':
+    case '.':
+        if (key == '.' && separation < 4) {
+            ++separation;
+        } else if (key == ',' && separation > 0) {
+            --separation;
+        }
+        mod_out_set_separation(separation);
+        if (playing) {
+            mod_out_refresh(&player);
+        }
+        draw_settings();
+        break;
+    case 's':
+    case 'S':
+        if (loaded && mod.info.num_samples > SAMPLES_ROWS) {
+            sample_page ^= 1;
+            draw_samples();
+        }
+        break;
+    default:
+        break;
     }
 }
 
 int main(void)
 {
-    enum mod_file_error err;
+    uint8_t key;
 
     mega65_io_enable();
     audio_dma_init();
     screen_init();
+    screen_palette(C_BACK, C_BACK);
     keyboard_flush();
 
+    screen_putn(0, 0, " Modplay65 " MODPLAY65_VERSION, 80);
+    screen_puts(49, 0, "MOD player for the MEGA65");
+    screen_colour(0, 0, 80, C_TITLE);
+    screen_reverse(0, 0, 80, 1);
+    screen_box(FILES_X, FILES_Y, FILES_W, FILES_H, C_FRAME, "Files");
+    screen_box(PLAYER_X, PLAYER_Y, PLAYER_W, PLAYER_H, C_FRAME, "Player");
+    screen_box(SAMPLES_X, SAMPLES_Y, SAMPLES_W, SAMPLES_H, C_FRAME,
+               "Samples (S = more)");
+    draw_player_frame();
+    draw_samples();
+    read_directory();
+
     for (;;) {
-        screen_clear();
-        screen_puts(0, 0, "Modplay65 " MODPLAY65_VERSION " - MOD loader");
-        screen_puts(0, 4, "Type the name of a MOD file in the root directory");
-        screen_puts(0, 5, "of the SD card (8.3 name) and press RETURN.");
-        for (;;) {
-            input_filename(2);
-            status("Loading          bytes");
-            err = mod_file_load(filename, &mod, show_progress);
-            if (err == MOD_FILE_OK) {
-                break;
+        if (playing && timebase_poll(player.tempo)) {
+            mod_player_tick(&player);
+            mod_out_apply(&player, &mod);
+            draw_levels();
+            if (player.row_started) {
+                draw_position();
+                mark_samples();
             }
-            status("Error: ");
-            screen_puts(7, STATUS_ROW, mod_file_error_text(err));
+            if (player.song_looped) {
+                play_next_file();
+            }
         }
-        browse_samples();
+        key = keyboard_poll();
+        if (key) {
+            handle_key(key);
+        }
     }
 }

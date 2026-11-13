@@ -6,10 +6,24 @@ A music player for the [MEGA65](https://mega65.org) that plays ProTracker
 MOD files and SID files, with a graphical user interface and sound
 visualisation.
 
-**Status: early development.** The program can load a 4-channel MOD file
-from the SD card, show its contents, play single samples and play the
-song. The user interface is a plain text screen so far; SID playback and
-the visualisers are not started.
+**Status: MOD playback works.** The program lists the MOD files on the SD
+card, plays 4-channel modules with all common ProTracker effects and shows
+position, level meters and the sample list. SID playback and the real
+visualisers are not started.
+
+## Keys
+
+| Key | Action |
+| --- | --- |
+| Cursor up/down | select a file or directory |
+| RETURN | play the selected file / enter the directory |
+| SPACE | pause, continue |
+| Cursor left/right | previous / next song position |
+| + / - | volume |
+| , / . | stereo separation |
+| S | second page of the sample list |
+
+There is no way back to BASIC; reset the MEGA65 to leave.
 
 ## Planned features
 
@@ -72,7 +86,9 @@ it over the serial/JTAG link with the `m65` tool from mega65-tools.
 ```
 src/        program source (C and assembly)
 src/hw/     hardware access layer
-src/mod/    MOD loading
+src/mod/    MOD loading and replay
+src/ui/     directory listing
+tools/      reference comparison against micromod
 tests/      host-side unit tests
 docs/       architecture, roadmap, hardware notes
 ```
