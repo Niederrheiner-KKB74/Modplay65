@@ -1,8 +1,7 @@
 # Modplay65 architecture
 
-Status: draft 4 (13 November 2026). MOD loading and song playback work on
-real hardware with eight test modules; the SID part and the visualisers are
-not started. Items marked **[verify]** are assumptions that an early
+Status: draft 5 (13 November 2026). MOD playback, the user interface and
+the MOD visualisers work on real hardware; the SID part is not started. Items marked **[verify]** are assumptions that an early
 milestone must confirm on Xemu and on a real MEGA65. See [ROADMAP.md](ROADMAP.md) for the
 order of work and [HARDWARE-NOTES.md](HARDWARE-NOTES.md) for register details.
 

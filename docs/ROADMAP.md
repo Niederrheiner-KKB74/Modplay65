@@ -79,7 +79,7 @@ built on top of them.
 - [ ] Long file names: shown correctly on hardware; loading a file by its
       long name not yet explicitly confirmed
 - [x] Q leaves the program by restarting BASIC through the reset vector
-      (works in Xemu; hardware check pending)
+      (confirmed on real hardware, 13 Nov 2026)
 - [ ] Custom character set
 - [x] Up to 255 directory entries (list kept in Attic RAM)
 
@@ -93,10 +93,10 @@ built on top of them.
 - [x] Note display (under each scope trace)
 - [x] V switches the right-hand panel: scopes, pattern, samples
 - [x] Level meters per channel (player panel, since M4)
-- [ ] Confirm on real hardware (Xemu: all three views, tempo unchanged
-      with scopes running, 334 rows in 40 s). First hardware test showed
-      wrong characters: the glyph block lay in a range the VIC-IV reads
-      from ROM; moved to `$B600`, retest pending
+- [x] Confirmed on real hardware (13 Nov 2026): all three views, tempo
+      unchanged with scopes running. The first hardware test showed wrong
+      characters because the glyph block lay in a range the VIC-IV reads
+      from ROM; fixed by moving it to `$B600`
 - [ ] Tick in an interrupt: still polled; a pass through the main loop
       must stay shorter than one video frame or the song slows down
 - [ ] Spectrum-style display, master scope from the mixer read-back
