@@ -18,6 +18,11 @@ target_compile_options(modplay65 PRIVATE -Os -Wall -Wextra -Wshadow)
 target_compile_definitions(modplay65 PRIVATE
     MODPLAY65_VERSION="${PROJECT_VERSION}")
 target_link_libraries(modplay65 PRIVATE mega65libc)
+# Own memory layout: keeps $B600-$CFFF free for the screen's glyph block.
+target_link_options(modplay65 PRIVATE
+    -T ${CMAKE_CURRENT_SOURCE_DIR}/modplay65.ld)
+set_target_properties(modplay65 PROPERTIES
+    LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/modplay65.ld)
 
 # The linker script already produces a loadable PRG with a BASIC SYS line.
 set_target_properties(modplay65 PROPERTIES

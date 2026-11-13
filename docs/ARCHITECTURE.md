@@ -25,9 +25,10 @@ A native MEGA65 program that
 | Languages | C for logic and UI, 45GS02 assembly for interrupt handlers and the SID trampoline |
 | CI | GitHub Actions builds the PRG on every push and pull request |
 
-The llvm-mos MEGA65 target loads the program at `$2001`, switches the BASIC
-ROM out and gives the program `$2001-$CFFF` in bank 0 (about 44 KB) with the
-soft stack growing down from `$D000`.
+The llvm-mos MEGA65 target loads the program at `$2001` and switches the
+BASIC ROM out. Modplay65 links with its own script: program and data in
+`$2001-$B5FF`, soft stack growing down from `$B600`, and `$B600-$CFFF`
+reserved for the screen's glyph block.
 
 ## 3. Design principles
 
@@ -83,7 +84,8 @@ docs/               this documentation
 | Region | Use |
 | --- | --- |
 | `$0000800-$00017FF` (bank 0) | Screen RAM (4000 bytes in 16-bit character mode) |
-| `$0002000-$000CFFF` (bank 0) | Program code, data, stack: 40 KB of 44 KB used (Nov 2026) |
+| `$0002001-$000B5FF` (bank 0) | Program code, data, stack (own linker script `src/modplay65.ld`); about 33 KB of 38 KB used (Nov 2026) |
+| `$000B600-$000CFFF` (bank 0) | Glyph block: character set copy and pixel canvas (fixed address, see HARDWARE-NOTES.md) |
 | `$0010000-$0011FFF` (bank 1) | DOS, do not touch |
 | `$0012000-$001F7FF` (bank 1) | 54 KB sample playback memory (below the colour RAM window at `$1F800`) |
 | `$0020000-$003FFFF` (banks 2-3) | ROM, write-protected |

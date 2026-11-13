@@ -94,7 +94,9 @@ built on top of them.
 - [x] V switches the right-hand panel: scopes, pattern, samples
 - [x] Level meters per channel (player panel, since M4)
 - [ ] Confirm on real hardware (Xemu: all three views, tempo unchanged
-      with scopes running, 334 rows in 40 s)
+      with scopes running, 334 rows in 40 s). First hardware test showed
+      wrong characters: the glyph block lay in a range the VIC-IV reads
+      from ROM; moved to `$B600`, retest pending
 - [ ] Tick in an interrupt: still polled; a pass through the main loop
       must stay shorter than one video frame or the song slows down
 - [ ] Spectrum-style display, master scope from the mixer read-back

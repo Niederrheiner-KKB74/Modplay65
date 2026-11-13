@@ -124,6 +124,12 @@ For an Amiga period `p`: `FREQ ≈ 1469309 / p`.
   colour); `$D058/$D059` must then be 160 for 80 columns. The glyph of
   character n is at CHARPTR + 8n also for n > 255, which gives a pixel
   canvas without bitmap mode. Verified in Xemu.
+- **Glyph addresses in `$1000-$1FFF` and `$9000-$9FFF` are read from the
+  character ROM, not from RAM** (`viciv.vhdl`, `character_data_from_rom`).
+  A RAM character set or canvas must stay out of both ranges. Found on
+  real hardware (13 Nov 2026): a glyph block at `$94F1` showed ROM
+  characters everywhere. Xemu does not emulate this. Modplay65 keeps its
+  glyph block at the fixed address `$B600`.
 - The ROM character sets can be read at `$FF7E000` (upper case/graphics)
   and `$FF7E800` (lower/upper case).
 
