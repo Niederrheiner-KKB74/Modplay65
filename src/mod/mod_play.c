@@ -39,10 +39,11 @@ static uint16_t period_of(const struct mod_channel *c, uint8_t note)
 static void trigger(struct mod_player *p, struct mod_channel *c, uint8_t note)
 {
     const struct mod_sample *s;
-    uint16_t offset = 0;
+    uint16_t offset;
 
     c->note = note;
     c->period = period_of(c, note);
+    c->porta_target = c->period; /* a later 3xx without note stays here */
     if (c->sample == 0) {
         return;
     }
@@ -51,8 +52,9 @@ static void trigger(struct mod_player *p, struct mod_channel *c, uint8_t note)
         if (c->param) {
             c->offset_memory = c->param;
         }
-        offset = (uint16_t)c->offset_memory << 8;
+        c->start_offset = (uint16_t)c->offset_memory << 8;
     }
+    offset = c->start_offset;
     if (c->vib_wave < 4) {
         c->vib_pos = 0;
     }
@@ -60,7 +62,7 @@ static void trigger(struct mod_player *p, struct mod_channel *c, uint8_t note)
         c->trem_pos = 0;
     }
     if (s->length == 0 || offset >= s->length) {
-        c->period = 0; /* nothing to play: silence the channel */
+        c->out_flags |= MOD_OUT_STOP; /* nothing to play */
         return;
     }
     c->out_flags |= MOD_OUT_TRIGGER;
@@ -148,6 +150,7 @@ static void channel_row(struct mod_player *p, struct mod_channel *c,
         const struct mod_sample *s = &p->info->sample[sample - 1];
 
         c->sample = sample;
+        c->start_offset = 0;
         c->volume = s->volume;
         c->finetune = (uint8_t)(s->finetune & 0x0F);
     }
@@ -307,11 +310,19 @@ static void channel_output(struct mod_player *p, struct mod_channel *c)
     uint16_t delta;
 
     if (period) {
-        if (c->effect == 0x0 && c->param && c->note != NO_NOTE) {
+        if (c->effect == 0x0 && c->param) {
+            /* Arpeggio: semitones above the current pitch, which may have
+             * been moved away from the note by a slide. */
+            uint8_t steps = 0;
+
             switch (p->tick % 3) {
-            case 1: period = period_of(c, (uint8_t)(c->note + (c->param >> 4))); break;
-            case 2: period = period_of(c, (uint8_t)(c->note + (c->param & 0x0F))); break;
+            case 1: steps = c->param >> 4; break;
+            case 2: steps = c->param & 0x0F; break;
             default: break;
+            }
+            if (steps) {
+                period = (uint16_t)(((uint32_t)period *
+                                     mod_semitone_table[steps] + 32768UL) >> 16);
             }
         } else if (c->effect == 0x4 || c->effect == 0x6) {
             delta = (uint16_t)(((uint16_t)wave(c->vib_wave, c->vib_pos,

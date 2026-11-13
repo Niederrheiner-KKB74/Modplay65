@@ -2,7 +2,9 @@
  * Modplay65 - load a MOD file from the SD card (MEGA65 only).
  *
  * The whole file is read into Attic RAM, the header is parsed and the
- * samples are copied into chip RAM where audio DMA can play them.
+ * samples are copied into chip RAM where audio DMA can play them. If the
+ * samples need more chip RAM than there is, the largest ones are stored
+ * at half (or a quarter of) their sample rate.
  */
 #ifndef MODPLAY65_MOD_FILE_H
 #define MODPLAY65_MOD_FILE_H
@@ -38,6 +40,9 @@ struct mod_file {
     struct mod_info info;
     uint32_t size;                          /* file size in bytes     */
     uint32_t sample_addr[MOD_MAX_SAMPLES];  /* chip RAM address, 0 = empty */
+    /* 0 = stored at full rate, 1 = half, 2 = quarter (module too large) */
+    uint8_t sample_shift[MOD_MAX_SAMPLES];
+    uint8_t reduced;                        /* number of reduced samples */
 };
 
 /* Called after each block with the number of bytes read so far. */

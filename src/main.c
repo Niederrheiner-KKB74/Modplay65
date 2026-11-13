@@ -38,7 +38,7 @@
 #define LIST_ROW 7
 #define LIST_ROWS 16
 #define COLUMN_WIDTH 40
-#define ENTRY_WIDTH 37
+#define ENTRY_WIDTH 39
 #define STATUS_ROW 24
 
 static struct mod_file mod;
@@ -149,6 +149,10 @@ static void show_module(void)
     screen_dec(50, 4, info->sample_bytes, 7);
     screen_puts(58, 4, "bytes");
 
+    if (mod.reduced) {
+        screen_dec(0, 5, mod.reduced, 2);
+        screen_puts(3, 5, "large sample(s) stored at reduced rate (h = half, q = quarter) to fit memory");
+    }
     screen_puts(0, 6, "No Name                   Length Vol L");
     screen_puts(COLUMN_WIDTH, 6, "No Name                   Length Vol L");
     for (i = 0; i < info->num_samples; ++i) {
@@ -163,6 +167,10 @@ static void show_module(void)
             screen_dec((uint8_t)(x + 33), y, s->volume, 3);
             if (s->loop_length) {
                 screen_puts((uint8_t)(x + 37), y, "*");
+            }
+            if (mod.sample_shift[i]) {
+                screen_puts((uint8_t)(x + 38), y,
+                            mod.sample_shift[i] == 1 ? "h" : "q");
             }
         }
     }
@@ -198,7 +206,6 @@ static void show_selection(uint8_t index, uint8_t on)
 static void play_sample(uint8_t index)
 {
     const struct mod_sample *s = &mod.info.sample[index];
-    uint32_t addr = mod.sample_addr[index];
     uint8_t ch;
 
     all_off();
@@ -208,13 +215,8 @@ static void play_sample(uint8_t index)
     /* one channel per side */
     for (ch = 0; ch < AUDIO_DMA_CHANNELS; ch += 2) {
         audio_dma_set_volume(ch, (uint8_t)(s->volume * 2), 0);
-        if (s->loop_length) {
-            audio_dma_play_looped(ch, addr, addr + s->loop_start,
-                                  addr + s->loop_start + s->loop_length,
-                                  AUDITION_FREQ);
-        } else {
-            audio_dma_play(ch, addr, (uint16_t)s->length, AUDITION_FREQ, 0);
-        }
+        mod_out_start(ch, &mod, index, 0,
+                      AUDITION_FREQ >> mod.sample_shift[index]);
     }
 }
 

@@ -153,10 +153,11 @@ enum mod_error mod_parse_header(const uint8_t *header, uint16_t header_len,
 
 #define MAX_REGIONS 8
 
-enum mod_error mod_place_samples(const struct mod_info *info,
-                                 const struct mod_region *regions,
-                                 uint8_t num_regions,
-                                 uint32_t address[MOD_MAX_SAMPLES])
+/* Place samples of the given stored lengths; 0 = empty. */
+static enum mod_error place(const uint32_t length[MOD_MAX_SAMPLES],
+                            const struct mod_region *regions,
+                            uint8_t num_regions,
+                            uint32_t address[MOD_MAX_SAMPLES])
 {
     uint32_t next[MAX_REGIONS];
     uint8_t done[MOD_MAX_SAMPLES];
@@ -174,8 +175,8 @@ enum mod_error mod_place_samples(const struct mod_info *info,
     }
     for (i = 0; i < MOD_MAX_SAMPLES; ++i) {
         address[i] = 0;
-        done[i] = (uint8_t)(info->sample[i].length == 0);
-        if (info->sample[i].length > largest_region) {
+        done[i] = (uint8_t)(length[i] == 0);
+        if (length[i] > largest_region) {
             return MOD_ERR_SAMPLE_TOO_BIG;
         }
     }
@@ -185,8 +186,8 @@ enum mod_error mod_place_samples(const struct mod_info *info,
         uint32_t len = 0;
 
         for (i = 0; i < MOD_MAX_SAMPLES; ++i) {
-            if (!done[i] && info->sample[i].length > len) {
-                len = info->sample[i].length;
+            if (!done[i] && length[i] > len) {
+                len = length[i];
                 best = i;
             }
         }
@@ -206,4 +207,70 @@ enum mod_error mod_place_samples(const struct mod_info *info,
         done[best] = 1;
     }
     return MOD_OK;
+}
+
+enum mod_error mod_place_samples(const struct mod_info *info,
+                                 const struct mod_region *regions,
+                                 uint8_t num_regions,
+                                 uint32_t address[MOD_MAX_SAMPLES])
+{
+    uint32_t length[MOD_MAX_SAMPLES];
+    uint8_t i;
+
+    for (i = 0; i < MOD_MAX_SAMPLES; ++i) {
+        length[i] = info->sample[i].length;
+    }
+    return place(length, regions, num_regions, address);
+}
+
+enum mod_error mod_fit_samples(const struct mod_info *info,
+                               const struct mod_region *regions,
+                               uint8_t num_regions,
+                               uint32_t address[MOD_MAX_SAMPLES],
+                               uint8_t shift[MOD_MAX_SAMPLES],
+                               uint8_t *reduced)
+{
+    uint32_t length[MOD_MAX_SAMPLES];
+    enum mod_error err;
+    uint8_t i;
+
+    *reduced = 0;
+    for (i = 0; i < MOD_MAX_SAMPLES; ++i) {
+        length[i] = info->sample[i].length;
+        shift[i] = 0;
+    }
+    for (;;) {
+        uint8_t best = 0xFF;
+        uint32_t len = 0;
+
+        err = place(length, regions, num_regions, address);
+        if (err == MOD_OK) {
+            return MOD_OK;
+        }
+        /* Halve the largest sample still at full rate; short samples
+         * (drums) are left alone as long as possible. Only when that is
+         * not enough, go on to quarter rate, again largest first. */
+        for (i = 0; i < MOD_MAX_SAMPLES; ++i) {
+            if (shift[i] == 0 && length[i] >= 2048 && length[i] > len) {
+                len = length[i];
+                best = i;
+            }
+        }
+        if (best == 0xFF) {
+            for (i = 0; i < MOD_MAX_SAMPLES; ++i) {
+                if (shift[i] < MOD_MAX_SHIFT && length[i] > len) {
+                    len = length[i];
+                    best = i;
+                }
+            }
+        }
+        if (best == 0xFF || len < 2) {
+            return err;
+        }
+        if (shift[best] == 0) {
+            ++*reduced;
+        }
+        ++shift[best];
+        length[best] = info->sample[best].length >> shift[best];
+    }
 }

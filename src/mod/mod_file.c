@@ -29,10 +29,41 @@ const char *mod_file_error_text(enum mod_file_error e)
     case MOD_FILE_NOT_A_MOD: return "not a MOD file";
     case MOD_FILE_CHANNELS: return "only 4-channel modules are supported";
     case MOD_FILE_SAMPLE_TOO_BIG: return "a sample is larger than 64 KB";
-    case MOD_FILE_NO_SAMPLE_RAM: return "samples do not fit into 182 KB of sample memory";
+    case MOD_FILE_NO_SAMPLE_RAM: return "samples do not fit into sample memory";
     case MOD_FILE_TRUNCATED: return "file is incomplete";
     }
     return "unknown error";
+}
+
+/*
+ * Copy a sample at a reduced rate: every 2 (shift 1) or 4 (shift 2) source
+ * bytes are averaged into one, which also takes the edge off the aliasing.
+ */
+static void copy_reduced(uint32_t src, uint32_t dst, uint32_t len,
+                         uint8_t shift)
+{
+    uint8_t step = (uint8_t)(1 << shift);
+
+    while (len >= step) {
+        uint16_t n = len > BLOCK ? BLOCK : (uint16_t)len;
+        uint16_t in, out = 0;
+
+        n &= (uint16_t)~(step - 1);
+        lcopy(src, ptr32(block), n);
+        for (in = 0; in < n; in += step) {
+            int16_t sum = 0;
+            uint8_t k;
+
+            for (k = 0; k < step; ++k) {
+                sum += (int8_t)block[in + k];
+            }
+            block[out++] = (uint8_t)(int8_t)(sum >> shift);
+        }
+        lcopy(ptr32(block), dst, out);
+        src += n;
+        dst += out;
+        len -= n;
+    }
 }
 
 enum mod_file_error mod_file_load(const char *filename, struct mod_file *mod,
@@ -94,8 +125,8 @@ enum mod_file_error mod_file_load(const char *filename, struct mod_file *mod,
     if (size < mod->info.sample_offset) {
         return MOD_FILE_TRUNCATED;
     }
-    err = mod_place_samples(&mod->info, regions, NUM_REGIONS,
-                            mod->sample_addr);
+    err = mod_fit_samples(&mod->info, regions, NUM_REGIONS, mod->sample_addr,
+                          mod->sample_shift, &mod->reduced);
     if (err == MOD_ERR_SAMPLE_TOO_BIG) {
         return MOD_FILE_SAMPLE_TOO_BIG;
     }
@@ -119,8 +150,16 @@ enum mod_file_error mod_file_load(const char *filename, struct mod_file *mod,
         if (offset < size) {
             uint32_t avail = size - offset;
 
-            lcopy(MOD_FILE_ATTIC + offset, mod->sample_addr[i],
-                  (uint16_t)(len < avail ? len : avail));
+            if (avail > len) {
+                avail = len;
+            }
+            if (mod->sample_shift[i] == 0) {
+                lcopy(MOD_FILE_ATTIC + offset, mod->sample_addr[i],
+                      (uint16_t)avail);
+            } else {
+                copy_reduced(MOD_FILE_ATTIC + offset, mod->sample_addr[i],
+                             avail, mod->sample_shift[i]);
+            }
         }
         offset += len;
     }

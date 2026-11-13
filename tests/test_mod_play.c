@@ -137,9 +137,9 @@ static void test_arpeggio_vibrato_offset(void)
     mod_player_tick(&p);
     CHECK(p.ch[0].out_period == 428);
     mod_player_tick(&p);
-    CHECK(p.ch[0].out_period == mod_period_table[0][12 + 4]);
+    CHECK(p.ch[0].out_period == 340); /* 428 four semitones up  */
     mod_player_tick(&p);
-    CHECK(p.ch[0].out_period == mod_period_table[0][12 + 7]);
+    CHECK(p.ch[0].out_period == 286); /* 428 seven semitones up */
     mod_player_tick(&p);
     CHECK(p.ch[0].out_period == 428);
     ticks(2);
@@ -155,7 +155,7 @@ static void test_arpeggio_vibrato_offset(void)
     ticks(5);
     mod_player_tick(&p); /* row 3 */
     CHECK(!(p.ch[0].out_flags & MOD_OUT_TRIGGER));
-    CHECK(p.ch[0].out_period == 0);
+    CHECK(p.ch[0].out_flags & MOD_OUT_STOP);
 }
 
 static void test_extended(void)

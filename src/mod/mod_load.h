@@ -71,4 +71,21 @@ enum mod_error mod_place_samples(const struct mod_info *info,
                                  uint8_t num_regions,
                                  uint32_t address[MOD_MAX_SAMPLES]);
 
+/* Highest value mod_fit_samples puts into shift[]: 2 = quarter rate. */
+#define MOD_MAX_SHIFT 2
+
+/*
+ * Like mod_place_samples, but if the samples do not fit, the largest ones
+ * are stored at a reduced sample rate until they do: shift[i] is 0 for
+ * full rate, 1 for half, 2 for a quarter, and the sample then occupies
+ * length >> shift[i] bytes. Returns the number of reduced samples in
+ * *reduced. Fails only if even MOD_MAX_SHIFT is not enough.
+ */
+enum mod_error mod_fit_samples(const struct mod_info *info,
+                               const struct mod_region *regions,
+                               uint8_t num_regions,
+                               uint32_t address[MOD_MAX_SAMPLES],
+                               uint8_t shift[MOD_MAX_SAMPLES],
+                               uint8_t *reduced);
+
 #endif

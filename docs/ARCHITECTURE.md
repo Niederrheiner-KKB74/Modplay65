@@ -103,10 +103,12 @@ Consequences for MOD playback:
   182 KB in total. Samples are placed largest first; each stays inside one
   bank. Six of the first eight test modules need more than 128 KB, one
   (300 KB) does not fit and is refused with a message.
-- Open: modules above 182 KB. Options: (a) keep refusing; (b) take the ROM
-  banks 2-3 as well (about 310 KB, but a reset then needs the ROM to be
-  reloaded); (c) store oversized modules at half the sample rate;
-  (d) keep samples in Attic RAM and swap them into chip RAM as needed.
+- Modules above 182 KB: the largest samples are stored at half their
+  sample rate (averaging neighbouring bytes), largest first and leaving
+  samples under 2 KB alone, until everything fits; a quarter rate is the
+  last resort. Playback halves the frequency, offsets and loop points of
+  such a sample. This costs treble on the reduced samples but plays any
+  module; the screen marks reduced samples.
 
 ## 6. MOD playback
 
@@ -180,8 +182,8 @@ Per tick, the player:
 ### 6.6 Effects
 
 All standard ProTracker effects `0`-`F` including the `Exy` set. Order of
-implementation is in the roadmap; correctness is checked against a reference
-player on the PC using the shared portable code.
+implementation is in the roadmap. Correctness is checked on the PC against
+the micromod reference replay, tick by tick (`tools/refcompare`).
 
 ## 7. SID playback
 
@@ -276,7 +278,8 @@ the master oscilloscope plus oscillator 3 and envelope 3 read-back.
 
 ## 11. Open decisions
 
-1. Strategy for modules with more than 182 KB of samples (section 5).
+1. (decided) Modules with more than 182 KB of samples: reduced sample
+   rate, see section 5.
 2. SD card only, or D81 support from the start (section 8).
 3. Text-mode UI with graphics area as proposed, or a full bitmap UI.
 4. Whether to support the MEGA65's PAL and NTSC video modes equally from the

@@ -20,13 +20,14 @@
 #define MOD_OUT_TRIGGER 0x01 /* start the sample at out_offset        */
 #define MOD_OUT_PERIOD  0x02 /* out_period changed                    */
 #define MOD_OUT_VOLUME  0x04 /* out_volume changed                    */
+#define MOD_OUT_STOP    0x08 /* silence the channel (empty sample)    */
 
 struct mod_channel {
     /* output for the hardware layer */
     uint8_t out_flags;
     uint8_t out_sample;   /* 1..31, valid with MOD_OUT_TRIGGER          */
     uint16_t out_offset;  /* start offset in bytes for the trigger      */
-    uint16_t out_period;  /* Amiga period, 0 = silent                   */
+    uint16_t out_period;  /* Amiga period, 0 = no note yet              */
     uint8_t out_volume;   /* 0..64                                      */
 
     /* engine state */
@@ -42,6 +43,7 @@ struct mod_channel {
     uint8_t vib_pos, vib_speed, vib_depth, vib_wave;
     uint8_t trem_pos, trem_speed, trem_depth, trem_wave;
     uint8_t offset_memory;
+    uint16_t start_offset; /* 9xx offset, kept until the next instrument */
     uint8_t loop_row, loop_count;
     uint8_t delayed_note; /* note waiting for EDx, 0xFF = none          */
     uint16_t last_period; /* last values reported, to detect changes    */

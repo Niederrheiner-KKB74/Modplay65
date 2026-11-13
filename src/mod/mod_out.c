@@ -20,6 +20,32 @@ static uint32_t freq_of(uint16_t period)
     return 1469309UL / period;
 }
 
+/* Rate reduction of the sample each engine channel is playing. */
+static uint8_t shift_of[MOD_CHANNELS];
+
+void mod_out_start(uint8_t dma, const struct mod_file *mod, uint8_t index,
+                   uint16_t offset, uint32_t freq)
+{
+    const struct mod_sample *s = &mod->info.sample[index];
+    uint8_t shift = mod->sample_shift[index];
+    uint32_t base = mod->sample_addr[index];
+    uint32_t start = base + (offset >> shift);
+
+    if (s->loop_length >> shift) {
+        uint32_t loop_start = base + (s->loop_start >> shift);
+        uint32_t loop_end = loop_start + (s->loop_length >> shift);
+
+        if (start >= loop_end) {
+            start = loop_start;
+        }
+        audio_dma_play_looped(dma, start, loop_start, loop_end, freq);
+    } else {
+        audio_dma_play(dma, start,
+                       (uint16_t)((s->length >> shift) - (offset >> shift)),
+                       freq, 0);
+    }
+}
+
 void mod_out_stop(void)
 {
     uint8_t ch;
@@ -38,35 +64,21 @@ void mod_out_apply(const struct mod_player *p, const struct mod_file *mod)
         uint8_t dma = dma_of[i];
         uint8_t volume = (uint8_t)(c->out_volume << 1);
 
+        if (c->out_flags & MOD_OUT_STOP) {
+            audio_dma_stop(dma);
+        }
         if (c->out_period == 0) {
-            if (c->out_flags & (MOD_OUT_TRIGGER | MOD_OUT_PERIOD)) {
-                audio_dma_stop(dma);
-            }
             continue;
         }
         if (c->out_flags & MOD_OUT_TRIGGER) {
-            const struct mod_sample *s = &mod->info.sample[c->out_sample - 1];
-            uint32_t base = mod->sample_addr[c->out_sample - 1];
-            uint32_t start = base + c->out_offset;
-            uint32_t freq = freq_of(c->out_period);
-
+            shift_of[i] = mod->sample_shift[c->out_sample - 1];
             audio_dma_set_volume(dma, volume, 0);
-            if (s->loop_length) {
-                uint32_t loop_start = base + s->loop_start;
-                uint32_t loop_end = loop_start + s->loop_length;
-
-                if (start >= loop_end) {
-                    start = loop_start;
-                }
-                audio_dma_play_looped(dma, start, loop_start, loop_end, freq);
-            } else {
-                audio_dma_play(dma, start,
-                               (uint16_t)(s->length - c->out_offset), freq, 0);
-            }
+            mod_out_start(dma, mod, (uint8_t)(c->out_sample - 1),
+                          c->out_offset, freq_of(c->out_period) >> shift_of[i]);
             continue;
         }
         if (c->out_flags & MOD_OUT_PERIOD) {
-            audio_dma_set_freq(dma, freq_of(c->out_period));
+            audio_dma_set_freq(dma, freq_of(c->out_period) >> shift_of[i]);
         }
         if (c->out_flags & MOD_OUT_VOLUME) {
             audio_dma_set_volume(dma, volume, 0);

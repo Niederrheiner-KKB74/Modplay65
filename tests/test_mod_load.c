@@ -153,8 +153,46 @@ static void test_placement(void)
     CHECK(addr[1] == 0x50000);
 }
 
+static void test_fit(void)
+{
+    static const struct mod_region one[] = { { 0x40000, 0x4FFFF } };
+    static struct mod_info info;
+    uint32_t addr[MOD_MAX_SAMPLES];
+    uint8_t shift[MOD_MAX_SAMPLES];
+    uint8_t reduced;
+
+    memset(&info, 0, sizeof info);
+    info.sample[0].length = 30000;
+    info.sample[1].length = 20000;
+    CHECK(mod_fit_samples(&info, one, 1, addr, shift, &reduced) == MOD_OK);
+    CHECK(reduced == 0 && shift[0] == 0 && shift[1] == 0);
+
+    /* 60000 + 30000 + 20000 is too much: only the largest is halved */
+    info.sample[2].length = 60000;
+    CHECK(mod_fit_samples(&info, one, 1, addr, shift, &reduced) == MOD_ERR_NO_MEMORY ||
+          reduced > 0);
+    CHECK(mod_fit_samples(&info, one, 1, addr, shift, &reduced) == MOD_OK);
+    CHECK(shift[2] >= 1);
+    CHECK(shift[1] == 0);
+    CHECK((60000u >> shift[2]) + (30000u >> shift[0]) + 20000u <= 0xFFFF);
+
+    /* a sample larger than a bank becomes playable at half rate */
+    memset(&info, 0, sizeof info);
+    info.sample[0].length = 100000;
+    CHECK(mod_place_samples(&info, one, 1, addr) == MOD_ERR_SAMPLE_TOO_BIG);
+    CHECK(mod_fit_samples(&info, one, 1, addr, shift, &reduced) == MOD_OK);
+    CHECK(shift[0] == 1 && reduced == 1 && addr[0] == 0x40000);
+
+    /* hopeless: even a quarter of everything does not fit */
+    for (reduced = 0; reduced < 31; ++reduced) {
+        info.sample[reduced].length = 120000;
+    }
+    CHECK(mod_fit_samples(&info, one, 1, addr, shift, &reduced) != MOD_OK);
+}
+
 int main(void)
 {
+    test_fit();
     test_mk();
     test_other_formats();
     test_placement();

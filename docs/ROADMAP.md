@@ -53,11 +53,12 @@ built on top of them.
 - [ ] Test with modules that use more effects and looped samples: seven
       more files load and run in Xemu and on the PC; listening test on
       hardware pending
-- [ ] Host-side reference test against a known-good player
+- [x] Host-side reference test against micromod (`tools/refcompare`):
+      eight modules agree on position, period (within 2 units), volume
+      and note triggers on every tick
 - [ ] Move the tick into an interrupt once the UI needs longer screen
       updates
-- [ ] Decide the strategy for modules above 182 KB (ARCHITECTURE.md,
-      open decision 1)
+- [x] Modules above 182 KB: largest samples stored at reduced rate
 
 ## M4 - User interface
 
