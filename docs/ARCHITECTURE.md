@@ -1,8 +1,8 @@
 # Modplay65 architecture
 
-Status: draft 6 (13 November 2026). MOD playback, the user interface and
-the MOD visualisers work on real hardware. SID playback works in Xemu and
-matches a reference emulator; not yet tested on real hardware. Items marked **[verify]** are assumptions that an early
+Status: draft 7 (14 November 2026). MOD playback with visualisers and PSID
+playback work on real hardware. Missing: SID visualisation, SID volume and
+stereo, RSID tunes. Items marked **[verify]** are assumptions that an early
 milestone must confirm on Xemu and on a real MEGA65. See [ROADMAP.md](ROADMAP.md) for the
 order of work and [HARDWARE-NOTES.md](HARDWARE-NOTES.md) for register details.
 
@@ -241,7 +241,7 @@ a tune cannot simply be loaded where it wants to be.
 Verified (November 2026): Commando (songs 1 and 2) and Katakis produce,
 in Xemu, exactly the SID register states of a reference run in an
 independent 6502 emulator (`tools/sidref`), at 50 play calls per second.
-Not yet heard on real hardware.
+Confirmed by ear on real hardware on 14 November 2026.
 
 ### 7.3 Scope and limits
 

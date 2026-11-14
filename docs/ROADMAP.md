@@ -115,7 +115,8 @@ initial scope). All three are PAL, 6581, one SID.
       register in Xemu (`tools/sidref`)
 - [x] Zero page and stack: the tune gets its own (block 0 mapped)
 - [x] CPU speed: tunes run at 40.5 MHz; no problems with the test tunes
-- [ ] Hear it on real hardware
+- [x] Heard on real hardware (14 Nov 2026): Commando and Katakis correct,
+      song change, pause/resume and MOD after SID all work
 - [ ] Decide the register shadow question for visualisation
 - [ ] Mixer setup so one-SID tunes are centred
 

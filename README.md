@@ -13,7 +13,7 @@ handler and tunes located in `$C000-$DFFF` are refused with a message.
 card, plays 4-channel modules with all common ProTracker effects and shows
 an oscilloscope per channel, the running pattern, level meters and the
 sample list. PSID tunes (`.sid`) play on the MEGA65's SID chips with
-sub-tune selection; this part is new and not yet tested on real hardware.
+sub-tune selection.
 
 ## Keys
 
