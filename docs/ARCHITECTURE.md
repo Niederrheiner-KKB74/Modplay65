@@ -1,8 +1,8 @@
 # Modplay65 architecture
 
-Status: draft 7 (14 November 2026). MOD playback with visualisers and PSID
-playback work on real hardware. Missing: SID visualisation, SID volume and
-stereo, RSID tunes. Items marked **[verify]** are assumptions that an early
+Status: draft 8 (14 November 2026). MOD playback with visualisers and PSID
+playback work on real hardware; SID visualisation and SID levels are new
+and wait for a hardware test. Missing: RSID tunes. Items marked **[verify]** are assumptions that an early
 milestone must confirm on Xemu and on a real MEGA65. See [ROADMAP.md](ROADMAP.md) for the
 order of work and [HARDWARE-NOTES.md](HARDWARE-NOTES.md) for register details.
 
@@ -28,7 +28,8 @@ A native MEGA65 program that
 The llvm-mos MEGA65 target loads the program at `$2001` and switches the
 BASIC ROM out. Modplay65 links with its own script: program and data in
 `$2001-$B4FF`, soft stack growing down from `$B500`, `$B500-$CEFF` for the
-screen's glyph block and `$CF00-$CFFF` for the SID trampoline. Most code is
+screen's glyph block, `$CF00-$CFFF` for the trampoline page and a
+not-loaded section `.hibss` at `$E000-$FFF9` for large buffers. Most code is
 built with `-Oz`; the code that runs every tick or frame with `-Os`.
 
 ## 3. Design principles
@@ -60,6 +61,7 @@ src/
     screen.[ch]       direct text output to screen RAM              (exists)
     timebase.[ch]     tick timing from the raster counter           (exists)
     fileload.[ch]     whole file from SD card to Attic RAM          (exists)
+    memmap.[ch]       memory maps, trampoline page, IRQ stub        (exists)
     sid.[ch]          SID chip access, model and mixer setup
     irq.s             interrupt entry/exit, CIA timer setup
     bigmem.[ch]       far memory helpers on top of mega65-libc
@@ -71,10 +73,10 @@ src/
     mod_out.[ch]      engine output to audio DMA (MEGA65 only)      (exists)
   sid/              SID support                                   (exists)
     psid.[ch]         PSID header parsing (portable)
-    sid_play.[ch]     bank 4 setup, trampoline, song start, play calls
+    sid_play.[ch]     bank 4 setup, song start, play calls, SID levels
   ui/               directory listing (dir.[ch]); the screen layout and
                     key handling are still in main.c              (exists)
-  vis/              scope.[ch], pattern.[ch]                      (exists)
+  vis/              scope.[ch], pattern.[ch], sidvis.[ch]         (exists)
 tests/              host-side unit tests for the portable code      (exists)
 tools/              helper scripts (disk image creation, test data)
 docs/               this documentation
@@ -206,7 +208,7 @@ a tune cannot simply be loaded where it wants to be.
 - The tune is copied into chip RAM bank 4 (`$40000-$4FFFF`) at its own
   16-bit address; bank 4 is "the C64's RAM". This is the same memory the
   MOD player uses for samples, so only one of the two can be loaded.
-- `src/sid/sid_play.c` writes a 64-byte trampoline to `$CF00`. Before each
+- `src/hw/memmap.c` writes the trampoline page to `$CF00`. Before each
   call of init or play it executes `MAP` so that the CPU sees bank 4
   instead of bank 0:
 
@@ -216,13 +218,13 @@ a tune cannot simply be loaded where it wants to be.
   | 1-3 | `$2000-$7FFF` | bank 4 | bank 0 (mapped 1:1) |
   | 4-5 | `$8000-$BFFF` | bank 4 | bank 0 |
   | 6 | `$C000-$DFFF` | **not mapped**: bank 0 RAM and I/O | same |
-  | 7 | `$E000-$FFFF` | bank 4 | C65 KERNAL (`$3E000`) |
+  | 7 | `$E000-$FFFF` | bank 4 | bank 0 RAM (`$01 = $35`); C65 KERNAL only for BASIC |
 
   MAP takes priority over the I/O area, so block 6 must stay unmapped or
   the tune's SID writes would land in RAM. The trampoline lives in block 6
   and is therefore visible in both maps. The normal map is the one BASIC 65
-  leaves for a program; Modplay65 sets it explicitly at start-up so the
-  trampoline can restore it exactly.
+  leaves for a program, except that block 7 is unmapped so Modplay65 can
+  use the RAM at `$E000`; exit restores BASIC's map first.
 - With block 0 mapped, the tune has its own zero page and stack page in
   bank 4, and `$00/$01` are plain RAM (the CPU port is only visible while
   block 0 is unmapped), so a tune cannot change the real ROM/I/O banking.
