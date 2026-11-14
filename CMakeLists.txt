@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.18)
 set(LLVM_MOS_PLATFORM mega65)
 find_package(llvm-mos-sdk REQUIRED)
 
-project(modplay65 VERSION 0.1.0 LANGUAGES C ASM)
+project(modplay65 VERSION 0.2.0 LANGUAGES C ASM)
 
 if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
     message(FATAL_ERROR
