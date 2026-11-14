@@ -151,7 +151,10 @@ initial scope). All three are PAL, 6581, one SID.
 - [ ] D81 and floppy file access for music files
 - [ ] Optional mouse support
 - [x] D81 image built by CI (`tools/mkd81`), loads and runs in Xemu; a
-      tag `vX.Y.Z` creates a GitHub release with PRG and D81
+      tag `vX.Y.Z` or a release published on GitHub gets PRG and D81
 - [x] User documentation in the README
-- [x] Release 0.2.0 (14 Nov 2026): D81 start, SID time limit and all
-      functions confirmed on real hardware
+- [x] Version 0.2.0 (14 Nov 2026): D81 start, SID time limit and all
+      functions confirmed on real hardware; on `main`
+- [ ] Publish release v0.2.0 on GitHub (tag pushes are blocked in the
+      Claude session; publishing the release in the web interface makes
+      the build attach PRG and D81)
