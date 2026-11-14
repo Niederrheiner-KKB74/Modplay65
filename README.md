@@ -117,8 +117,9 @@ ctest --test-dir build-tests --output-on-failure
 ```
 
 Every push is built by GitHub Actions; the PRG and the D81 image can be
-downloaded from the run's artifacts. Pushing a tag `vX.Y.Z` also creates a
-GitHub release with both files.
+downloaded from the run's artifacts. For a release, either push a tag
+`vX.Y.Z` (the build creates the release) or publish a release with a new
+tag `vX.Y.Z` on GitHub (the build adds the PRG and D81 to it).
 
 ## Source layout
 
