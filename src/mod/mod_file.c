@@ -5,10 +5,12 @@
 
 #include <mega65/memory.h>
 
+#include "hw/memmap.h"
+
 #define BLOCK FILELOAD_BLOCK
 #define block fileload_buffer
 
-static uint8_t header[MOD_HEADER_SIZE];
+static MEMMAP_HIGH uint8_t header[MOD_HEADER_SIZE];
 static const struct mod_region regions[] = { MOD_SAMPLE_REGIONS };
 #define NUM_REGIONS (sizeof(regions) / sizeof(regions[0]))
 

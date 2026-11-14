@@ -1,8 +1,8 @@
 # Modplay65 architecture
 
-Status: draft 7 (14 November 2026). MOD playback with visualisers and PSID
-playback work on real hardware. Missing: SID visualisation, SID volume and
-stereo, RSID tunes. Items marked **[verify]** are assumptions that an early
+Status: draft 8 (14 November 2026). MOD playback with visualisers and PSID
+playback with visualisers, volume and centred output work on real
+hardware. Missing: RSID tunes; 2SID stereo is untested. Items marked **[verify]** are assumptions that an early
 milestone must confirm on Xemu and on a real MEGA65. See [ROADMAP.md](ROADMAP.md) for the
 order of work and [HARDWARE-NOTES.md](HARDWARE-NOTES.md) for register details.
 
@@ -28,7 +28,8 @@ A native MEGA65 program that
 The llvm-mos MEGA65 target loads the program at `$2001` and switches the
 BASIC ROM out. Modplay65 links with its own script: program and data in
 `$2001-$B4FF`, soft stack growing down from `$B500`, `$B500-$CEFF` for the
-screen's glyph block and `$CF00-$CFFF` for the SID trampoline. Most code is
+screen's glyph block, `$CF00-$CFFF` for the trampoline page and a
+not-loaded section `.hibss` at `$E000-$FFF9` for large buffers. Most code is
 built with `-Oz`; the code that runs every tick or frame with `-Os`.
 
 ## 3. Design principles
@@ -60,6 +61,7 @@ src/
     screen.[ch]       direct text output to screen RAM              (exists)
     timebase.[ch]     tick timing from the raster counter           (exists)
     fileload.[ch]     whole file from SD card to Attic RAM          (exists)
+    memmap.[ch]       memory maps, trampoline page, IRQ stub        (exists)
     sid.[ch]          SID chip access, model and mixer setup
     irq.s             interrupt entry/exit, CIA timer setup
     bigmem.[ch]       far memory helpers on top of mega65-libc
@@ -71,10 +73,10 @@ src/
     mod_out.[ch]      engine output to audio DMA (MEGA65 only)      (exists)
   sid/              SID support                                   (exists)
     psid.[ch]         PSID header parsing (portable)
-    sid_play.[ch]     bank 4 setup, trampoline, song start, play calls
+    sid_play.[ch]     bank 4 setup, song start, play calls, SID levels
   ui/               directory listing (dir.[ch]); the screen layout and
                     key handling are still in main.c              (exists)
-  vis/              scope.[ch], pattern.[ch]                      (exists)
+  vis/              scope.[ch], pattern.[ch], sidvis.[ch]         (exists)
 tests/              host-side unit tests for the portable code      (exists)
 tools/              helper scripts (disk image creation, test data)
 docs/               this documentation
@@ -87,7 +89,8 @@ docs/               this documentation
 | `$0000800-$00017FF` (bank 0) | Screen RAM (4000 bytes in 16-bit character mode) |
 | `$0002001-$000B4FF` (bank 0) | Program code, data, stack (own linker script `src/modplay65.ld`); about 36 KB of 37 KB used (Nov 2026) |
 | `$000B500-$000CEFF` (bank 0) | Glyph block: character set copy and pixel canvas (fixed address, see HARDWARE-NOTES.md) |
-| `$000CF00-$000CFFF` (bank 0) | SID trampoline (visible in the tune's memory map too) |
+| `$000CF00-$000CFFF` (bank 0) | Trampoline page: memory-map switches, SID call, IRQ stub (visible in the tune's memory map too) |
+| `$000E000-$000FFF9` (bank 0) | Large buffers (`.hibss`, not loaded): module and tune headers, directory, file buffer, scope and SID-visualiser buffers; RAM because Modplay65 switches the KERNAL off (`$01 = $35`, block 7 unmapped) and points the CPU vectors to the IRQ stub; BASIC is restored on exit |
 | `$0010000-$0011FFF` (bank 1) | DOS, do not touch |
 | `$0012000-$001F7FF` (bank 1) | 54 KB sample playback memory (below the colour RAM window at `$1F800`) |
 | `$0020000-$003FFFF` (banks 2-3) | ROM, write-protected |
@@ -205,7 +208,7 @@ a tune cannot simply be loaded where it wants to be.
 - The tune is copied into chip RAM bank 4 (`$40000-$4FFFF`) at its own
   16-bit address; bank 4 is "the C64's RAM". This is the same memory the
   MOD player uses for samples, so only one of the two can be loaded.
-- `src/sid/sid_play.c` writes a 64-byte trampoline to `$CF00`. Before each
+- `src/hw/memmap.c` writes the trampoline page to `$CF00`. Before each
   call of init or play it executes `MAP` so that the CPU sees bank 4
   instead of bank 0:
 
@@ -215,13 +218,13 @@ a tune cannot simply be loaded where it wants to be.
   | 1-3 | `$2000-$7FFF` | bank 4 | bank 0 (mapped 1:1) |
   | 4-5 | `$8000-$BFFF` | bank 4 | bank 0 |
   | 6 | `$C000-$DFFF` | **not mapped**: bank 0 RAM and I/O | same |
-  | 7 | `$E000-$FFFF` | bank 4 | C65 KERNAL (`$3E000`) |
+  | 7 | `$E000-$FFFF` | bank 4 | bank 0 RAM (`$01 = $35`); C65 KERNAL only for BASIC |
 
   MAP takes priority over the I/O area, so block 6 must stay unmapped or
   the tune's SID writes would land in RAM. The trampoline lives in block 6
   and is therefore visible in both maps. The normal map is the one BASIC 65
-  leaves for a program; Modplay65 sets it explicitly at start-up so the
-  trampoline can restore it exactly.
+  leaves for a program, except that block 7 is unmapped so Modplay65 can
+  use the RAM at `$E000`; exit restores BASIC's map first.
 - With block 0 mapped, the tune has its own zero page and stack page in
   bank 4, and `$00/$01` are plain RAM (the CPU port is only visible while
   block 0 is unmapped), so a tune cannot change the real ROM/I/O banking.
@@ -254,18 +257,28 @@ Confirmed by ear on real hardware on 14 November 2026.
 - **Known gaps:** a tune that writes to `$C000-$CFFF` outside its own data
   overwrites Modplay65's glyph block (screen garbage, not a crash). Tunes
   that use illegal 6502 opcodes fail, because those opcodes are 45GS02
-  instructions. 2SID/3SID tunes are untested. Volume and stereo settings
-  do not apply to SID yet.
+  instructions. 2SID/3SID tunes are untested.
 - Pause switches off waveform and gate of the voices but keeps the volume
   register, because many tunes set it only once in their init routine.
 
 ### 7.4 Sound routing
 
 The MEGA65 has four SIDs: `$D400` and `$D420` on the left, `$D440` and
-`$D460` on the right. With the default mixer setting a one-SID tune is
-loud on the left and quiet on the right. Centring it needs the audio mixer
-(`$D6F4/$D6F5`, layout in HARDWARE-NOTES.md); that is postponed until a
-safe way to save and restore the user's mixer setting is confirmed.
+`$D460` on the right. Since core 0.97 each SID has two level registers,
+`$xx1D` (left) and `$xx1E` (right), reachable while bit 4 of `$D63C` is
+set. Modplay65 uses them instead of the audio mixer, so the user's mixer
+setting is never touched:
+
+- one-SID tunes: both levels of SID 1 at `$C0` x volume, i.e. centred;
+- 2SID tunes: SID 1 left, the second SID right; the stereo setting (`,`
+  and `.`) adds 0-100 % of each to the other side;
+- `+`/`-` scale all levels (volume).
+
+The original levels and `$D63C` are saved at start and restored when a
+MOD is played or the program exits. On cores before 0.97 these registers
+do not exist; SID tunes then play with the hardware default routing and
+the info panel says so. Centring and volume confirmed on real hardware
+(14 Nov 2026); the 2SID stereo width has not been tested yet.
 
 ## 8. User interface
 
@@ -297,21 +310,26 @@ collections usually sit and it is the faster path. D81 support follows later.
 
 | Visualiser | MOD | SID |
 | --- | --- | --- |
-| Level meters per voice | done: note triggers and volume | from register shadow, see below |
-| Oscilloscope per voice | done: sample bytes at the channel's playhead, scaled by volume | not available per voice |
-| Master oscilloscope | planned: mixer read-back `$D6FC/$D6FD` **[verify]** | same |
-| Note display | done | frequency register → note per voice |
+| Level meters per voice | done: note triggers and volume | done: envelope model (below) |
+| Oscilloscope per voice | done: sample bytes at the channel's playhead, scaled by volume | done: waveform rebuilt from the registers |
+| Mix trace | - | done: sum of the three voices x master volume |
+| Note display | done | done: frequency → note, plus waveform, pulse width, ADSR, filter |
 | Pattern view | done | not applicable |
 
-For SID tunes, the mixer read-back (`$D6F4` = source 0-15 or output
-16-23, value at `$D6FC/$D6FD`) can feed a master oscilloscope.
+SID registers are write-only, but since core 0.97 the last written values
+can be read at `$FF65000 + 32 x SID` (loopback). After every play call
+the visualiser (`src/vis/sidvis.c`) copies SID 1's 25 registers and
 
-SID registers are write-only, so per-voice data for SID tunes needs a shadow
-copy. Option: while the play routine runs, map RAM instead of I/O at
-`$D400`, then copy the written values to the real chip after each call. That
-gives the visualiser every register but breaks tunes that write a register
-several times per call. This is decided during the SID spike; the fallback is
-the master oscilloscope plus oscillator 3 and envelope 3 read-back.
+- runs a simple ADSR model per voice, one step per video frame, using the
+  SID's attack/decay/release times (linear, no exponential decay);
+- rebuilds 144 points of each voice's waveform at 8000 points per second:
+  triangle, sawtooth, pulse with the pulse width, noise from a small LFSR,
+  combined waveforms ANDed; scaled by the envelope;
+- adds the three voices, scaled by the master volume, for the mix trace.
+
+Filter, ring modulation and sync are not modelled; the traces show what
+the voices play, not the exact output. On cores before 0.97 the loopback
+reads `$FF` and the visualiser is replaced by a message.
 
 ## 10. Testing
 

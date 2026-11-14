@@ -6,7 +6,9 @@
 #include <mega65/fileio.h>
 #include <mega65/memory.h>
 
-uint8_t fileload_buffer[FILELOAD_BLOCK];
+#include "hw/memmap.h"
+
+MEMMAP_HIGH uint8_t fileload_buffer[FILELOAD_BLOCK];
 static char name_buf[66];
 
 enum fileload_result fileload_to_attic(const char *name, uint32_t *size,

@@ -1,11 +1,10 @@
 /*
  * Modplay65 - play PSID tunes on the MEGA65's SID chips (MEGA65 only).
  *
- * The tune runs in its own 64 KB "C64 memory" in chip RAM bank 4. Before
- * each call of the tune's init or play routine, a small trampoline at
- * $CF00 uses the 45GS02's MAP instruction to show bank 4 in place of
- * bank 0, except for $C000-$DFFF: that block stays unmapped so the I/O
- * area (and with it the SID at $D400) remains visible. See
+ * The tune runs in its own 64 KB "C64 memory" in chip RAM bank 4. Each
+ * call of the tune's init or play routine goes through memmap_call_tune(),
+ * which shows bank 4 in place of bank 0 except for $C000-$DFFF, so the I/O
+ * area (and with it the SID at $D400) stays visible. See hw/memmap.h and
  * docs/ARCHITECTURE.md, section 7.
  */
 #ifndef MODPLAY65_SID_SID_PLAY_H
@@ -37,8 +36,28 @@ struct sid_tune {
     uint16_t rate16;   /* play calls per second times 16                */
 };
 
-/* Install the trampoline and set the normal memory map. Call once. */
+/*
+ * Remember the SID settings found at start-up and find out whether the
+ * core has the SID extras (sid_extras). Call once.
+ */
 void sid_system_init(void);
+
+/*
+ * 1 when this MEGA65 core can read back the SID registers ($FF65000) and
+ * has a left and right volume per SID ($D41D/$D41E): core release 0.97
+ * (April 2025) and later. Volume, stereo and SID visualisation need it.
+ */
+extern uint8_t sid_extras;
+
+/* Copy the 25 registers of SID n (0..3) as last written (needs extras). */
+void sid_read_regs(uint8_t n, uint8_t *dst);
+
+/*
+ * Volume (0..64) and stereo separation (0 = mono .. 4 = full) for the
+ * current tune (needs extras). A one-SID tune is placed in the centre;
+ * with two SIDs the first is left and the second right.
+ */
+void sid_set_output(uint8_t volume, uint8_t separation);
 
 /* Load a SID file and check that it can be played. */
 enum sid_error sid_load(const char *filename, struct sid_tune *tune,
@@ -67,7 +86,10 @@ void sid_silence(void);
  */
 void sid_pause(void);
 
-/* Silence and put back the SID model setting found at sid_system_init. */
+/*
+ * Silence and put back the SID model and per-SID volume settings found
+ * at sid_system_init.
+ */
 void sid_stop(void);
 
 #endif

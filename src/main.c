@@ -14,6 +14,7 @@
 
 #include "hw/audio_dma.h"
 #include "hw/keyboard.h"
+#include "hw/memmap.h"
 #include "hw/screen.h"
 #include "hw/system.h"
 #include "hw/timebase.h"
@@ -24,6 +25,7 @@
 #include "ui/dir.h"
 #include "vis/pattern.h"
 #include "vis/scope.h"
+#include "vis/sidvis.h"
 
 #ifndef MODPLAY65_VERSION
 #define MODPLAY65_VERSION "dev"
@@ -65,14 +67,16 @@
 #define C_BAR COL_LGREEN
 #define C_ERROR COL_PINK
 
-static struct mod_file mod;
+static MEMMAP_HIGH struct mod_file mod;
 static struct mod_player player;
-static struct sid_tune tune;
+static MEMMAP_HIGH struct sid_tune tune;
 
 static uint8_t sid_loaded;     /* a SID tune is in memory             */
 static uint8_t sid_running;    /* its play routine is being called    */
 static uint16_t sid_frames;    /* video frames since the song started */
 static uint16_t sid_seconds;
+static MEMMAP_HIGH int8_t sid_wave[SIDVIS_VOICES + 1][SCOPE_POINTS];
+static MEMMAP_HIGH uint8_t sid_regs[25];
 
 static uint8_t loaded;         /* a module is in memory               */
 static uint8_t playing;        /* the song is running (not paused)    */
@@ -112,8 +116,8 @@ static void status(const char *text, uint8_t colour)
 static void help(void)
 {
     if (sid_loaded) {
-        status("RETURN play  SPACE pause  CRSR up/down file, left/right song  "
-               "Q quit", C_LABEL);
+        status("RETURN play  SPACE pause  CRSR file/song  +- vol  ,. stereo  "
+               "V view  Q quit", C_LABEL);
         return;
     }
     status("RETURN play  SPACE pause  CRSR file/position  +- vol  ,. stereo  "
@@ -319,8 +323,103 @@ static void draw_sid_info(void)
     draw_sid_timing(VX + 10, VY + 9);
     screen_puts(VX + 10, VY + 10, clocks[info->clock]);
     screen_puts(VX + 10, VY + 11, models[info->model]);
-    screen_puts(VX, VY + 14, "Visualisation for SID tunes follows.");
-    screen_colour(VX, VY + 14, 38, C_FRAME);
+    if (!sid_extras) {
+        screen_puts(VX, VY + 14, "SID scopes, volume and stereo");
+        screen_puts(VX, VY + 15, "need MEGA65 core 0.97 or newer.");
+        screen_colour(VX, VY + 14, 38, C_TITLE);
+        screen_colour(VX, VY + 15, 38, C_TITLE);
+    } else {
+        screen_puts(VX, VY + 14, "V = scopes");
+        screen_colour(VX, VY + 14, 38, C_FRAME);
+    }
+}
+
+#define SID_LABEL_Y(v) ((uint8_t)(VY + (v) * SCOPE_ROW_STEP + SCOPE_CELLS_H))
+
+/* The line under each SID scope trace: what the registers say. */
+static void draw_sid_labels(void)
+{
+    static const char wave_letters[] = "TSPN";
+    const uint8_t *r = sidvis_regs;
+    char text[4];
+    uint8_t v, b, y;
+
+    for (v = 0; v < SIDVIS_VOICES; ++v, r += 7) {
+        y = SID_LABEL_Y(v);
+        for (b = 0; b < 4; ++b) {
+            text[0] = (r[4] & (0x10 << b)) ? wave_letters[b] : '.';
+            text[1] = 0;
+            screen_puts((uint8_t)(SCOPE_X + 4 + b), y, text);
+        }
+        screen_puts(SCOPE_X + 9, y, (r[4] & 1) ? "G" : ".");
+        sidvis_note((uint16_t)(r[0] | (r[1] << 8)), text);
+        text[3] = 0;
+        screen_puts(SCOPE_X + 11, y, text);
+        screen_hex(SCOPE_X + 19, y, (uint16_t)(r[2] | ((r[3] & 15) << 8)), 3);
+        screen_hex(SCOPE_X + 27, y, r[5], 2);
+        screen_hex(SCOPE_X + 33, y, r[6], 2);
+    }
+    y = SID_LABEL_Y(3);
+    screen_dec(SCOPE_X + 8, y, sidvis_regs[24] & 15, 2);
+    for (b = 0; b < 3; ++b) {
+        text[0] = (sidvis_regs[24] & (0x10 << b)) ? "LBH"[b] : '.';
+        text[1] = 0;
+        screen_puts((uint8_t)(SCOPE_X + 15 + b), y, text);
+    }
+    screen_hex(SCOPE_X + 23, y,
+               (uint16_t)((sidvis_regs[21] & 7) | (sidvis_regs[22] << 3)), 3);
+    screen_hex(SCOPE_X + 31, y, sidvis_regs[23] >> 4, 1);
+}
+
+/* Fixed parts of the SID scope view. */
+static void draw_sid_scopes(void)
+{
+    static const uint8_t colours[4] = { COL_LGREEN, COL_CYAN, COL_YELLOW, COL_PINK };
+    uint8_t v, y;
+
+    scope_show(SCOPE_X, VY);
+    for (v = 0; v < 4; ++v) {
+        y = SID_LABEL_Y(v);
+        screen_colour(SCOPE_X, y, 36, C_TEXT);
+        screen_colour(SCOPE_X, y, 3, colours[v]);
+        if (v < SIDVIS_VOICES) {
+            screen_puts(SCOPE_X, y, "V");
+            screen_dec(SCOPE_X + 1, y, (uint32_t)v + 1, 1);
+            screen_puts(SCOPE_X + 16, y, "PW");
+            screen_puts(SCOPE_X + 24, y, "AD");
+            screen_puts(SCOPE_X + 30, y, "SR");
+            screen_colour(SCOPE_X + 16, y, 2, C_LABEL);
+            screen_colour(SCOPE_X + 24, y, 2, C_LABEL);
+            screen_colour(SCOPE_X + 30, y, 2, C_LABEL);
+        } else {
+            screen_puts(SCOPE_X, y, "Mix");
+            screen_puts(SCOPE_X + 4, y, "Vol");
+            screen_puts(SCOPE_X + 11, y, "Flt");
+            screen_puts(SCOPE_X + 19, y, "Cut");
+            screen_puts(SCOPE_X + 27, y, "Res");
+            screen_colour(SCOPE_X + 4, y, 3, C_LABEL);
+            screen_colour(SCOPE_X + 11, y, 3, C_LABEL);
+            screen_colour(SCOPE_X + 19, y, 3, C_LABEL);
+            screen_colour(SCOPE_X + 27, y, 3, C_LABEL);
+        }
+    }
+    draw_sid_labels();
+}
+
+/* One trace of the SID scope view per call: voices 0-2, then the mix. */
+static void draw_sid_trace(uint8_t trace)
+{
+    if (trace < SIDVIS_VOICES) {
+        sidvis_wave(trace, sid_wave[trace], SCOPE_POINTS);
+        scope_draw_samples(trace, sid_wave[trace],
+                           (uint8_t)(sidvis_level(trace) >> 3));
+    } else {
+        int8_t *const waves[SIDVIS_VOICES] = { sid_wave[0], sid_wave[1],
+                                               sid_wave[2] };
+
+        sidvis_mix(sid_wave[3], SCOPE_POINTS, waves);
+        scope_draw_samples(3, sid_wave[3], 32);
+    }
 }
 
 /* Redraw the whole right-hand panel for the current view. */
@@ -332,14 +431,19 @@ static void draw_view(void)
     uint8_t i;
 
     screen_box(SAMPLES_X, SAMPLES_Y, SAMPLES_W, SAMPLES_H, C_FRAME,
-               sid_loaded ? "SID tune" : titles[view]);
+               !sid_loaded ? titles[view]
+               : (view == VIEW_SCOPES && sid_extras) ? "SID voices" : "SID tune");
     for (i = 0; i < SAMPLES_ROWS; ++i) {
         screen_putn(VX, (uint8_t)(VY + i), "", SAMPLES_W - 2);
         screen_colour(VX, (uint8_t)(VY + i), SAMPLES_W - 2, C_TEXT);
     }
     scopes_due = 0;
     if (sid_loaded) {
-        draw_sid_info();
+        if (view == VIEW_SCOPES && sid_extras) {
+            draw_sid_scopes();
+        } else {
+            draw_sid_info();
+        }
         return;
     }
     switch (view) {
@@ -382,19 +486,26 @@ static void update_view(void)
 
 static void draw_settings(void)
 {
+    if (sid_loaded && !sid_extras) {
+        screen_putn(PX, PY + 6, "", 28);
+    } else {
+        screen_puts(PX, PY + 6, "Volume");
+        screen_dec(PX + 7, PY + 6, ((uint16_t)master * 100) >> 6, 3);
+        screen_puts(PX + 10, PY + 6, "%");
+        screen_puts(PX + 14, PY + 6, "Stereo");
+        if (sid_loaded && !tune.info.sid2) {
+            screen_putn(PX + 21, PY + 6, "mono", 4);
+        } else {
+            screen_dec(PX + 21, PY + 6, (uint16_t)separation * 25, 3);
+            screen_puts(PX + 24, PY + 6, "%");
+        }
+    }
+    screen_colour(PX, PY + 6, 27, C_LABEL);
     if (sid_loaded) {
-        screen_putn(PX, PY + 6, "CRSR left/right: other song", 28);
-        screen_colour(PX, PY + 6, 28, C_LABEL);
         screen_putn(PX + 28, PY + 6, sid_running ? "PLAYING" : "PAUSED", 8);
         screen_colour(PX + 28, PY + 6, 8, sid_running ? C_BAR : C_TITLE);
         return;
     }
-    screen_puts(PX, PY + 6, "Volume");
-    screen_dec(PX + 7, PY + 6, ((uint16_t)master * 100) >> 6, 3);
-    screen_puts(PX + 10, PY + 6, "%");
-    screen_puts(PX + 14, PY + 6, "Stereo");
-    screen_dec(PX + 21, PY + 6, (uint16_t)separation * 25, 3);
-    screen_puts(PX + 24, PY + 6, "%");
     screen_putn(PX + 28, PY + 6,
                 !loaded ? "" : playing ? "PLAYING" : "PAUSED", 8);
     screen_colour(PX, PY + 6, 27, C_LABEL);
@@ -526,12 +637,16 @@ static void stop_sid(void)
 static void start_sid_song(uint8_t song)
 {
     sid_start_song(&tune, song);
+    sid_set_output(master, separation);
+    sidvis_reset();
     sid_frames = 0;
     sid_seconds = 0;
     sid_running = 1;
     timebase_init();
     draw_sid_position();
-    draw_sid_timing(VX + 10, VY + 9);
+    if (view != VIEW_SCOPES || !sid_extras) {
+        draw_sid_timing(VX + 10, VY + 9);
+    }
     draw_settings();
 }
 
@@ -760,6 +875,7 @@ static void handle_key(uint8_t key)
         if (playing) {
             mod_out_refresh(&player);
         }
+        sid_set_output(master, separation);
         draw_settings();
         break;
     case ',':
@@ -773,6 +889,7 @@ static void handle_key(uint8_t key)
         if (playing) {
             mod_out_refresh(&player);
         }
+        sid_set_output(master, separation);
         draw_settings();
         break;
     case 's':
@@ -786,9 +903,10 @@ static void handle_key(uint8_t key)
     case 'v':
     case 'V':
         if (sid_loaded) {
-            break;
+            view = (uint8_t)(view == VIEW_SCOPES ? VIEW_SAMPLES : VIEW_SCOPES);
+        } else {
+            view = (uint8_t)(view + 1 < VIEW_COUNT ? view + 1 : 0);
         }
-        view = (uint8_t)(view + 1 < VIEW_COUNT ? view + 1 : 0);
         draw_view();
         break;
     default:
@@ -800,6 +918,7 @@ int main(void)
 {
     uint8_t key;
 
+    memmap_init();
     mega65_io_enable();
     audio_dma_init();
     screen_init();
@@ -822,10 +941,23 @@ int main(void)
             if (timebase_poll_rate(tune.rate16)) {
                 sid_play_tick();
             }
-            if (timebase_new_frame() && ++sid_frames == timebase_frame_rate()) {
-                sid_frames = 0;
-                ++sid_seconds;
-                draw_sid_position();
+            if (timebase_new_frame()) {
+                if (++sid_frames == timebase_frame_rate()) {
+                    sid_frames = 0;
+                    ++sid_seconds;
+                    draw_sid_position();
+                }
+                if (sid_extras && view == VIEW_SCOPES) {
+                    sid_read_regs(0, sid_regs);
+                    sidvis_frame(sid_regs);
+                    draw_sid_labels();
+                    scopes_due = SIDVIS_VOICES + 1;
+                }
+            }
+            /* one trace per pass, as for MOD */
+            if (scopes_due) {
+                draw_sid_trace((uint8_t)(SIDVIS_VOICES + 1 - scopes_due));
+                --scopes_due;
             }
         }
         if (playing && timebase_poll(player.tempo)) {

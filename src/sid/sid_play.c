@@ -5,73 +5,7 @@
 
 #include <mega65/memory.h>
 
-/* ---- trampoline ------------------------------------------------------ */
-
-/*
- * Machine code for $CF00. $C000-$DFFF is never mapped, so this page is
- * visible both with the normal map and with the tune's map.
- *
- * MAP operands (45GS02): A = lower offset bits 15-8, X = blocks 3-0 to map
- * (bits 7-4) and offset bits 19-16, Y and Z the same for blocks 7-4.
- *   tune map:   blocks 0-3 and 4, 5, 7 -> +$40000 (bank 4)
- *   normal map: blocks 1-3 identity, block 7 -> +$30000 (C65 KERNAL),
- *               the state BASIC 65 leaves for a program started with RUN.
- * With block 0 mapped, $00/$01 are plain RAM, not the CPU port, so the
- * tune cannot change the real ROM/I/O banking.
- */
-#define TRAMPOLINE ((volatile uint8_t *)0xCF00)
-#define T_SONG 0x0D   /* operand of "lda #song"        */
-#define T_TARGET 0x13 /* operand of "jsr target"       */
-#define T_HOME 0x25   /* entry: set the normal map     */
-#define T_IRQ 0x30    /* interrupt stub for the tune's vectors */
-
-static const uint8_t trampoline_code[] = {
-    /* $00 call tune */
-    0x08,             /* php                                        */
-    0x78,             /* sei                                        */
-    0xA9, 0x00,       /* lda #$00                                   */
-    0xA2, 0xF4,       /* ldx #$F4   blocks 0-3, +$40000              */
-    0xA0, 0x00,       /* ldy #$00                                   */
-    0xA3, 0xB4,       /* ldz #$B4   blocks 4, 5, 7, +$40000          */
-    0x5C,             /* map                                        */
-    0xEA,             /* eom        now running in the tune's map    */
-    0xA9, 0x00,       /* $0C: lda #song                              */
-    0xA2, 0x00,       /* ldx #0                                     */
-    0xA0, 0x00,       /* ldy #0                                     */
-    0x20, 0x00, 0x00, /* $12: jsr target                             */
-    /* $15 back to the normal map */
-    0x78,             /* sei        the tune may have done cli       */
-    0xD8,             /* cld        ... or left decimal mode on      */
-    0xA9, 0x00,       /* lda #$00                                   */
-    0xA2, 0xE0,       /* ldx #$E0   blocks 1-3, offset 0             */
-    0xA0, 0x00,       /* ldy #$00                                   */
-    0xA3, 0x83,       /* ldz #$83   block 7, +$30000                 */
-    0x5C,             /* map                                        */
-    0xEA,             /* eom                                        */
-    0xA3, 0x00,       /* ldz #0     compiled code expects Z = 0      */
-    0x28,             /* plp                                        */
-    0x60,             /* rts                                        */
-    /* $25 entry: set the normal map */
-    0x08,             /* php                                        */
-    0x4C, 0x15, 0xCF, /* jmp $CF15                                  */
-    /* $29 padding up to the interrupt stub */
-    0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA,
-    /* $30 interrupt stub: acknowledge everything and return */
-    0x48,             /* pha                                        */
-    0xAD, 0x0D, 0xDC, /* lda $DC0D                                  */
-    0xAD, 0x0D, 0xDD, /* lda $DD0D                                  */
-    0xA9, 0xFF,       /* lda #$FF                                   */
-    0x8D, 0x19, 0xD0, /* sta $D019                                  */
-    0x68,             /* pla                                        */
-    0x40              /* rti                                        */
-};
-
-_Static_assert(sizeof(trampoline_code) == T_IRQ + 14,
-               "trampoline layout changed: check the T_* offsets");
-
-typedef void (*tramp_fn)(void);
-#define CALL_TUNE() (((tramp_fn)0xCF00)())
-#define SET_HOME_MAP() (((tramp_fn)(0xCF00 + T_HOME))())
+#include "hw/memmap.h"
 
 /* ---- hardware -------------------------------------------------------- */
 
@@ -91,18 +25,105 @@ typedef void (*tramp_fn)(void);
 #define PAL_VBI16 802           /* 50.125 Hz x 16  */
 #define NTSC_VBI16 957          /* 59.826 Hz x 16  */
 
+#define SIDMODE_EXTRA 0x10 /* makes the per-SID volume registers writable */
+#define LOOPBACK 0xFF65000UL
+#define PAN_LEFT 0x1D
+#define PAN_RIGHT 0x1E
+#define CENTRE_LEVEL 0xC0  /* centred one-SID tune at full volume: both
+                            * sides are summed later, so stay below $FF */
+
+uint8_t sid_extras;
 static uint8_t saved_sidmode;
+static uint8_t saved_pan[SID_COUNT * 2];
 static const struct psid_info *current;
+
+static volatile uint8_t *sid_chip(uint8_t n)
+{
+    return (volatile uint8_t *)(SID_BASE + n * 0x20U);
+}
+
+/* Write a test value to SID 1 and look for it in the loopback area. */
+static uint8_t detect_extras(void)
+{
+    volatile uint8_t *sid = sid_chip(0);
+    uint8_t ok;
+
+    sid[0] = 0xA5;
+    ok = (uint8_t)(lpeek(LOOPBACK) == 0xA5);
+    sid[0] = 0x5A;
+    ok = (uint8_t)(ok && lpeek(LOOPBACK) == 0x5A);
+    sid[0] = 0;
+    return ok;
+}
 
 void sid_system_init(void)
 {
-    uint8_t i;
+    uint8_t n;
 
-    for (i = 0; i < sizeof(trampoline_code); ++i) {
-        TRAMPOLINE[i] = trampoline_code[i];
-    }
-    SET_HOME_MAP();
     saved_sidmode = SIDMODE;
+    sid_extras = detect_extras();
+    if (!sid_extras) {
+        return;
+    }
+    SIDMODE = (uint8_t)(saved_sidmode | SIDMODE_EXTRA);
+    for (n = 0; n < SID_COUNT; ++n) {
+        saved_pan[n * 2] = sid_chip(n)[PAN_LEFT];
+        saved_pan[n * 2 + 1] = sid_chip(n)[PAN_RIGHT];
+    }
+    SIDMODE = saved_sidmode;
+}
+
+void sid_read_regs(uint8_t n, uint8_t *dst)
+{
+    lcopy(LOOPBACK + n * 0x20U, (uint32_t)(uintptr_t)dst, 25);
+}
+
+/*
+ * The volume registers are written with the extra registers enabled and
+ * then locked again, so a tune that clears $D400-$D41F cannot change them.
+ */
+static void write_pans(const uint8_t *pan)
+{
+    uint8_t mode = SIDMODE;
+    uint8_t n;
+
+    SIDMODE = (uint8_t)(mode | SIDMODE_EXTRA);
+    for (n = 0; n < SID_COUNT; ++n) {
+        sid_chip(n)[PAN_LEFT] = pan[n * 2];
+        sid_chip(n)[PAN_RIGHT] = pan[n * 2 + 1];
+    }
+    SIDMODE = (uint8_t)(mode & (uint8_t)~SIDMODE_EXTRA);
+}
+
+/* Index 0..3 of the SID at a tune's second/third SID address. */
+static uint8_t sid_index(uint16_t address)
+{
+    return (uint8_t)((address - SID_BASE) >> 5);
+}
+
+void sid_set_output(uint8_t volume, uint8_t separation)
+{
+    uint8_t pan[SID_COUNT * 2];
+    uint8_t full = (uint8_t)(((uint16_t)0xFF * volume) >> 6);
+    uint8_t centre = (uint8_t)(((uint16_t)CENTRE_LEVEL * volume) >> 6);
+    uint8_t other = (uint8_t)(((uint16_t)full * (uint8_t)(4 - separation)) >> 2);
+    uint8_t n;
+
+    if (!sid_extras || !current) {
+        return;
+    }
+    for (n = 0; n < SID_COUNT * 2; ++n) {
+        pan[n] = centre; /* unused SIDs are silent; centre is harmless */
+    }
+    if (current->sid2) {
+        /* first SID left, second right, a third one in the centre */
+        pan[0] = full;
+        pan[1] = other;
+        n = sid_index(current->sid2);
+        pan[n * 2] = other;
+        pan[n * 2 + 1] = full;
+    }
+    write_pans(pan);
 }
 
 void sid_silence(void)
@@ -134,6 +155,9 @@ void sid_pause(void)
 void sid_stop(void)
 {
     sid_silence();
+    if (sid_extras) {
+        write_pans(saved_pan);
+    }
     SIDMODE = saved_sidmode;
     current = 0;
 }
@@ -207,17 +231,9 @@ static void set_vectors(const struct psid_info *info)
         return;
     }
     for (v = 0; v < 6; v += 2) {
-        lpoke(SID_C64_RAM + 0xFFFAUL + v, (uint8_t)(0xCF00U + T_IRQ));
-        lpoke(SID_C64_RAM + 0xFFFBUL + v, (uint8_t)((0xCF00U + T_IRQ) >> 8));
+        lpoke(SID_C64_RAM + 0xFFFAUL + v, (uint8_t)MEMMAP_IRQ_STUB);
+        lpoke(SID_C64_RAM + 0xFFFBUL + v, (uint8_t)(MEMMAP_IRQ_STUB >> 8));
     }
-}
-
-static void call(uint16_t address, uint8_t a)
-{
-    TRAMPOLINE[T_SONG] = a;
-    TRAMPOLINE[T_TARGET] = (uint8_t)address;
-    TRAMPOLINE[T_TARGET + 1] = (uint8_t)(address >> 8);
-    CALL_TUNE();
 }
 
 void sid_start_song(struct sid_tune *tune, uint8_t song)
@@ -232,7 +248,7 @@ void sid_start_song(struct sid_tune *tune, uint8_t song)
     tune->song = song;
     current = info;
     sid_silence();
-    SIDMODE = (uint8_t)((saved_sidmode & 0xF0) |
+    SIDMODE = (uint8_t)((saved_sidmode & 0xE0) |
                         (info->model == PSID_MODEL_8580 ? 0x0F : 0x00));
 
     /* Fresh C64 memory: init routines change their own data. */
@@ -254,7 +270,7 @@ void sid_start_song(struct sid_tune *tune, uint8_t song)
     CIA1_TALO = 0xFF;
     CIA1_TAHI = 0xFF;
 
-    call(info->init, (uint8_t)(song - 1));
+    memmap_call_tune(info->init, (uint8_t)(song - 1));
 
     (void)CIA1_ICR;
     (void)CIA2_ICR;
@@ -277,6 +293,6 @@ void sid_start_song(struct sid_tune *tune, uint8_t song)
 void sid_play_tick(void)
 {
     if (current) {
-        call(current->play, 0);
+        memmap_call_tune(current->play, 0);
     }
 }

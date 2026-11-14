@@ -93,7 +93,17 @@ For an Amiga period `p`: `FREQ ≈ 1469309 / p`.
 
 - `$D63C` bits 3-0: SIDMODE, 0 = 6581, 1 = 8580; presumably one bit per
   chip **[verify]**.
-- `$D63C` bit 4: enable extra SID registers.
+- `$D63C` bit 4 (SIDEXENA, core 0.97+): while set, `$xx1D`/`$xx1E` of
+  each SID are its left/right output level (reset values: `$FF/$00` for
+  the left SIDs, `$00/$FF` for the right ones). The levels are always in
+  effect; the bit only makes them reachable. Clear it again afterwards,
+  because some tunes write to `$D41D-$D41F`.
+- `$FF65000 + 32 x SID + register` (core 0.97+): read-back of the last
+  value written to each SID register (loopback). Reads `$FF` on older
+  cores, which is how Modplay65 detects the feature: write `$A5`/`$5A`
+  to `$D400` and compare. Xemu does not have it (local patch for tests).
+- Core 0.97.0 was released on 22 Apr 2025; 0.95/0.96 have neither
+  feature.
 
 ## Audio mixer and read-back
 
@@ -204,6 +214,11 @@ the raw page at `$0400` instead.
   Xemu): blocks 1-3 mapped 1:1, block 7 mapped to `$3E000`, megabytes 0,
   i.e. `A=$00 X=$E0 Y=$00 Z=$83`. Modplay65 sets exactly this at start-up.
 - llvm-mos code expects Z = 0 (it uses `(zp),z` as plain indirect).
+- Modplay65 at run time: `A=$00 X=$E0 Y=$00 Z=$00` with `$01 = $35`, so
+  `$E000-$FFFF` is RAM; the IRQ/NMI/reset vectors there point to a stub
+  in the trampoline page. Exit maps block 7 back first (`Z=$83`), then
+  sets `$01`/`$D030` and jumps through `$FFFC`; the other order runs into
+  ROM over the trampoline page.
 
 ## Misc
 

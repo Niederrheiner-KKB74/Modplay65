@@ -7,6 +7,8 @@
 #include <mega65/fileio.h>
 #include <mega65/memory.h>
 
+#include "hw/memmap.h"
+
 /*
  * The hypervisor writes its directory entry to page $0400 (the library's
  * readdir asks for that page):
@@ -29,9 +31,9 @@
 
 uint8_t dir_count;
 
-static uint8_t order[DIR_MAX_ENTRIES]; /* sorted position -> stored slot */
-static struct dir_entry current;       /* buffer handed out by dir_entry */
-static struct dir_entry other;         /* second buffer for comparisons  */
+static MEMMAP_HIGH uint8_t order[DIR_MAX_ENTRIES]; /* sorted pos -> slot */
+static MEMMAP_HIGH struct dir_entry current; /* handed out by dir_entry  */
+static MEMMAP_HIGH struct dir_entry other;   /* second buffer, comparisons */
 static uint8_t current_slot = 0xFF;
 
 static void fetch(uint8_t slot, struct dir_entry *dst)
