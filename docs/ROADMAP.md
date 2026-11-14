@@ -128,7 +128,10 @@ initial scope). All three are PAL, 6581, one SID.
 - [x] Clear message for unsupported tunes (RSID, play address 0, tune in
       `$C000-$DFFF`, unsupported second SID address)
 - [x] Pause without losing the tune's volume setting
-- [ ] 2SID and 3SID tunes: allowed for `$D420/$D440/$D460`, untested
+- [x] 2SID tunes: "11 Non Blondes (reharmonized)" (2SID, `$D420`, CIA
+      200 Hz) matches the reference run on both SIDs at exactly 200 calls
+      per second in Xemu; V shows the second SID's voices
+- [ ] 3SID tunes: allowed for `$D440/$D460`, untested
 - [x] Program memory freed: large buffers moved to the RAM under the
       KERNAL at `$E000-$FFFF` (about 9 KB)
 - [x] SID visualisers: three voice scopes and a mix trace rebuilt from the
@@ -137,7 +140,8 @@ initial scope). All three are PAL, 6581, one SID.
 - [x] Volume (`+`/`-`) and stereo width (`,`/`.`) for SID tunes
 - [x] Confirmed on real hardware (14 Nov 2026): centred mono tunes,
       volume keys, voice scopes and V toggle, MOD stereo afterwards, exit
-- [ ] Stereo width for 2SID tunes: no test file yet
+- [x] 2SID on real hardware (14 Nov 2026): first SID left, second right,
+      stereo width keys, tempo and the V views confirmed
 
 ## M8 - Polish and release
 

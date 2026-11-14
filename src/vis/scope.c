@@ -26,6 +26,8 @@ static MEMMAP_HIGH uint8_t old_hi[SCOPE_CHANNELS][POINTS];
 static MEMMAP_HIGH uint8_t samples[POINTS];
 static uint8_t shown;
 
+void (*scope_poll)(void);
+
 void scope_show(uint8_t x, uint8_t y)
 {
     uint8_t ch, row;
@@ -84,7 +86,9 @@ static void build_scale(uint8_t volume)
         scaled[(uint8_t)(0 - n)] = (int8_t)(-(int8_t)v); /* sample -n */
         acc = (uint16_t)(acc + volume);
     }
-    scaled[128] = (int8_t)(-(CENTRE - 1));
+    /* sample -128: acc is now 128 x volume */
+    scaled[128] = (int8_t)(-(int8_t)((acc >> 8) > CENTRE - 1 ? CENTRE - 1
+                                                             : (acc >> 8)));
     scaled_volume = volume;
 }
 
@@ -104,6 +108,10 @@ static void draw(uint8_t channel, const uint8_t *src, uint8_t volume)
         uint8_t lo, hi;
         uint16_t x = (uint16_t)i * 2;
         uint8_t mask = masks[i & 3];
+
+        if ((i & 15) == 15 && scope_poll) {
+            scope_poll();
+        }
 
         y = (uint8_t)(CENTRE - v);
         /* join this point to the previous one with a vertical stroke */

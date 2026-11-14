@@ -88,6 +88,7 @@ static uint8_t sample_page;    /* 0 = samples 1-21, 1 = 22-31         */
 /* What the right-hand panel shows. */
 enum { VIEW_SCOPES, VIEW_PATTERN, VIEW_SAMPLES, VIEW_COUNT };
 static uint8_t view = VIEW_SCOPES;
+static uint8_t vis_sid; /* SID shown in the SID voices view: 0 or the second SID's index */
 
 /* Position of the row that is sounding (the engine is one row ahead). */
 static uint8_t shown_order, shown_pattern, shown_row;
@@ -294,7 +295,7 @@ static void draw_sid_info(void)
 {
     static const char *const labels[] = {
         "Title", "Author", "Released", "", "Format", "Songs", "Load",
-        "Init", "Play", "Timing", "Clock", "SID model"
+        "Init", "Play", "Timing", "Clock", "SID model", "SID chips"
     };
     static const char *const clocks[] = { "unknown", "PAL", "NTSC", "PAL+NTSC" };
     static const char *const models[] = { "unknown", "6581", "8580", "6581+8580" };
@@ -323,6 +324,14 @@ static void draw_sid_info(void)
     draw_sid_timing(VX + 10, VY + 9);
     screen_puts(VX + 10, VY + 10, clocks[info->clock]);
     screen_puts(VX + 10, VY + 11, models[info->model]);
+    screen_dec(VX + 10, VY + 12,
+               (uint32_t)1 + (info->sid2 != 0) + (info->sid3 != 0), 1);
+    if (info->sid2) {
+        put_hex4(VX + 12, VY + 12, info->sid2);
+    }
+    if (info->sid3) {
+        put_hex4(VX + 18, VY + 12, info->sid3);
+    }
     if (!sid_extras) {
         screen_puts(VX, VY + 14, "SID scopes, volume and stereo");
         screen_puts(VX, VY + 15, "need MEGA65 core 0.97 or newer.");
@@ -406,9 +415,18 @@ static void draw_sid_scopes(void)
     draw_sid_labels();
 }
 
+/* Play calls due while a scope trace is drawn (see scope_poll). */
+static void sid_poll(void)
+{
+    if (timebase_poll_rate(tune.rate16)) {
+        sid_play_tick();
+    }
+}
+
 /* One trace of the SID scope view per call: voices 0-2, then the mix. */
 static void draw_sid_trace(uint8_t trace)
 {
+    scope_poll = sid_poll;
     if (trace < SIDVIS_VOICES) {
         sidvis_wave(trace, sid_wave[trace], SCOPE_POINTS);
         scope_draw_samples(trace, sid_wave[trace],
@@ -420,6 +438,7 @@ static void draw_sid_trace(uint8_t trace)
         sidvis_mix(sid_wave[3], SCOPE_POINTS, waves);
         scope_draw_samples(3, sid_wave[3], 32);
     }
+    scope_poll = 0;
 }
 
 /* Redraw the whole right-hand panel for the current view. */
@@ -432,7 +451,9 @@ static void draw_view(void)
 
     screen_box(SAMPLES_X, SAMPLES_Y, SAMPLES_W, SAMPLES_H, C_FRAME,
                !sid_loaded ? titles[view]
-               : (view == VIEW_SCOPES && sid_extras) ? "SID voices" : "SID tune");
+               : (view == VIEW_SCOPES && sid_extras)
+                   ? (vis_sid ? "SID voices, second SID" : "SID voices")
+                   : "SID tune");
     for (i = 0; i < SAMPLES_ROWS; ++i) {
         screen_putn(VX, (uint8_t)(VY + i), "", SAMPLES_W - 2);
         screen_colour(VX, (uint8_t)(VY + i), SAMPLES_W - 2, C_TEXT);
@@ -673,6 +694,7 @@ static uint8_t load_sid(uint8_t index)
         return 0;
     }
     sid_loaded = 1;
+    vis_sid = 0;
     current = index;
     draw_files();
     draw_player_frame();
@@ -903,7 +925,17 @@ static void handle_key(uint8_t key)
     case 'v':
     case 'V':
         if (sid_loaded) {
-            view = (uint8_t)(view == VIEW_SCOPES ? VIEW_SAMPLES : VIEW_SCOPES);
+            /* voices of the first SID, of the second SID (2SID tunes), info */
+            if (view != VIEW_SCOPES) {
+                view = VIEW_SCOPES;
+                vis_sid = 0;
+            } else if (!vis_sid && tune.info.sid2 && sid_extras) {
+                vis_sid = (uint8_t)((tune.info.sid2 - 0xD400U) >> 5);
+            } else {
+                view = VIEW_SAMPLES;
+                vis_sid = 0;
+            }
+            sidvis_reset();
         } else {
             view = (uint8_t)(view + 1 < VIEW_COUNT ? view + 1 : 0);
         }
@@ -948,7 +980,7 @@ int main(void)
                     draw_sid_position();
                 }
                 if (sid_extras && view == VIEW_SCOPES) {
-                    sid_read_regs(0, sid_regs);
+                    sid_read_regs(vis_sid, sid_regs);
                     sidvis_frame(sid_regs);
                     draw_sid_labels();
                     scopes_due = SIDVIS_VOICES + 1;
