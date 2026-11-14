@@ -135,7 +135,9 @@ initial scope). All three are PAL, 6581, one SID.
       register loopback, per-voice note/waveform/ADSR labels, V switches
       to the tune info
 - [x] Volume (`+`/`-`) and stereo width (`,`/`.`) for SID tunes
-- [ ] Confirm visualisers, centring and volume on real hardware
+- [x] Confirmed on real hardware (14 Nov 2026): centred mono tunes,
+      volume keys, voice scopes and V toggle, MOD stereo afterwards, exit
+- [ ] Stereo width for 2SID tunes: no test file yet
 
 ## M8 - Polish and release
 
