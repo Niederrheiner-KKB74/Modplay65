@@ -26,8 +26,6 @@ static MEMMAP_HIGH uint8_t old_hi[SCOPE_CHANNELS][POINTS];
 static MEMMAP_HIGH uint8_t samples[POINTS];
 static uint8_t shown;
 
-void (*scope_poll)(void);
-
 void scope_show(uint8_t x, uint8_t y)
 {
     uint8_t ch, row;
@@ -68,7 +66,7 @@ void scope_show(uint8_t x, uint8_t y)
  * a gain of two, so a half-scale sample at full volume fills the trace.
  * Built with additions only; the CPU has no fast multiply.
  */
-static int8_t scaled[256];
+static MEMMAP_HIGH int8_t scaled[256];
 static uint8_t scaled_volume = 0xFF;
 
 static void build_scale(uint8_t volume)
@@ -108,10 +106,6 @@ static void draw(uint8_t channel, const uint8_t *src, uint8_t volume)
         uint8_t lo, hi;
         uint16_t x = (uint16_t)i * 2;
         uint8_t mask = masks[i & 3];
-
-        if ((i & 15) == 15 && scope_poll) {
-            scope_poll();
-        }
 
         y = (uint8_t)(CENTRE - v);
         /* join this point to the previous one with a vertical stroke */

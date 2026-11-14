@@ -57,8 +57,8 @@ built on top of them.
 - [x] Host-side reference test against micromod (`tools/refcompare`):
       eight modules agree on position, period (within 2 units), volume
       and note triggers on every tick
-- [ ] Move the tick into an interrupt once the UI needs longer screen
-      updates
+- [x] Tick in an interrupt (CIA 1 timer B as trigger, raster counter as
+      timebase); MOD tempo and SID rates unchanged in Xemu
 - [x] Modules above 182 KB: largest samples stored at reduced rate
 
 ## M4 - User interface
@@ -97,8 +97,8 @@ built on top of them.
       unchanged with scopes running. The first hardware test showed wrong
       characters because the glyph block lay in a range the VIC-IV reads
       from ROM; fixed by moving it to `$B600`
-- [ ] Tick in an interrupt: still polled; a pass through the main loop
-      must stay shorter than one video frame or the song slows down
+- [x] Tick in an interrupt (see M3); screen work can no longer slow the
+      song down
 - [ ] Spectrum-style display, master scope from the mixer read-back
 
 ## M6 - SID spike

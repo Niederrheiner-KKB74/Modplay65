@@ -224,3 +224,14 @@ the raw page at `$0400` instead.
 
 - `$D02F`: write `$47` then `$53` to enable MEGA65 I/O.
 - `$D770-$D77F`: hardware multiplier, `$D768-$D76F`: divider output.
+
+## Interrupts (Modplay65)
+
+- Playback interrupt: CIA 1 timer B, latch 500 (about 2 kHz), `$DC0F =
+  $11`, `$DC0D = $82`; acknowledged by reading `$DC0D`. Only a trigger:
+  the time itself comes from the raster counter.
+- CPU vector `$FFFE` (RAM, KERNAL unmapped) points to the handler; NMI and
+  reset vectors to the stub at `$CF30`.
+- SID init routines may change CIA 1 timer A and `$DC0D`; Modplay65 sets
+  `$DC0D = $01` (timer A interrupt off) and `$82` again after init.
+- Exit: `$DC0D = $7F`, timer B stopped, then the BASIC map and reset.

@@ -53,7 +53,7 @@ const struct dir_entry *dir_entry(uint8_t index)
     return &current;
 }
 
-static char name_buf[DIR_NAME_LEN + 1];
+static MEMMAP_HIGH char name_buf[DIR_NAME_LEN + 1];
 
 static uint8_t lower(uint8_t c)
 {

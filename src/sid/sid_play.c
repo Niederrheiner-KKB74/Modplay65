@@ -5,6 +5,7 @@
 
 #include <mega65/memory.h>
 
+#include "hw/irq.h"
 #include "hw/memmap.h"
 
 /* ---- hardware -------------------------------------------------------- */
@@ -260,7 +261,8 @@ void sid_start_song(struct sid_tune *tune, uint8_t song)
     lpoke(SID_C64_RAM + 1, 0x37);
     set_vectors(info);
 
-    /* No interrupts from the chips; Modplay65 itself never uses them. */
+    /* No interrupts from the chips during init (Modplay65's own timer B
+     * interrupt is switched on again afterwards). */
     CIA1_ICR = 0x7F;
     CIA2_ICR = 0x7F;
     VIC_IRQ_MASK = 0;
@@ -275,6 +277,7 @@ void sid_start_song(struct sid_tune *tune, uint8_t song)
     (void)CIA1_ICR;
     (void)CIA2_ICR;
     VIC_IRQ = 0xFF;
+    irq_timer_on(); /* playback interrupt, see hw/irq.h */
     tune->cia = psid_song_uses_cia(info, song);
     if (tune->cia) {
         latch = CIA1_TALO;

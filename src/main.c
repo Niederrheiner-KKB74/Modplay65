@@ -13,6 +13,7 @@
 #include <mega65/memory.h>
 
 #include "hw/audio_dma.h"
+#include "hw/irq.h"
 #include "hw/keyboard.h"
 #include "hw/memmap.h"
 #include "hw/screen.h"
@@ -68,18 +69,24 @@
 #define C_ERROR COL_PINK
 
 static MEMMAP_HIGH struct mod_file mod;
-static struct mod_player player;
+static MEMMAP_HIGH struct mod_player player;
 static MEMMAP_HIGH struct sid_tune tune;
 
 static uint8_t sid_loaded;     /* a SID tune is in memory             */
-static uint8_t sid_running;    /* its play routine is being called    */
+static volatile uint8_t sid_running; /* its play routine is being called */
 static uint16_t sid_frames;    /* video frames since the song started */
 static uint16_t sid_seconds;
 static MEMMAP_HIGH int8_t sid_wave[SIDVIS_VOICES + 1][SCOPE_POINTS];
 static MEMMAP_HIGH uint8_t sid_regs[25];
 
 static uint8_t loaded;         /* a module is in memory               */
-static uint8_t playing;        /* the song is running (not paused)    */
+static volatile uint8_t playing; /* the song is running (not paused) */
+/* Published by the playback interrupt for the main loop: */
+static volatile uint8_t mod_ticks;    /* counts MOD ticks                */
+static volatile uint8_t mod_new_row;  /* a row started since last look   */
+static volatile uint8_t mod_ended;    /* the song looped; playback stops */
+static volatile uint8_t mod_triggers; /* bit per channel: note triggered */
+static uint8_t ticks_seen;
 static uint8_t sel;            /* selected entry in the file list     */
 static uint8_t top;            /* first visible entry                 */
 static uint8_t current = 0xFF; /* entry that is loaded, 0xFF = none   */
@@ -420,18 +427,9 @@ static void draw_sid_scopes(void)
     draw_sid_labels();
 }
 
-/* Play calls due while a scope trace is drawn (see scope_poll). */
-static void sid_poll(void)
-{
-    if (timebase_poll_rate(tune.rate16)) {
-        sid_play_tick();
-    }
-}
-
 /* One trace of the SID scope view per call: voices 0-2, then the mix. */
 static void draw_sid_trace(uint8_t trace)
 {
-    scope_poll = sid_poll;
     if (trace < SIDVIS_VOICES) {
         sidvis_wave(trace, sid_wave[trace], SCOPE_POINTS);
         scope_draw_samples(trace, sid_wave[trace],
@@ -443,7 +441,6 @@ static void draw_sid_trace(uint8_t trace)
         sidvis_mix(sid_wave[3], SCOPE_POINTS, waves);
         scope_draw_samples(3, sid_wave[3], 32);
     }
-    scope_poll = 0;
 }
 
 /* Redraw the whole right-hand panel for the current view. */
@@ -623,13 +620,17 @@ static void draw_position(void)
 /* Level meters: jump up on a note, fall back between notes. */
 static void draw_levels(void)
 {
-    uint8_t i;
+    uint8_t i, triggers;
 
+    irq_off();
+    triggers = mod_triggers;
+    mod_triggers = 0;
+    irq_on();
     for (i = 0; i < MOD_CHANNELS; ++i) {
         const struct mod_channel *c = &player.ch[i];
         uint8_t y = (uint8_t)(PY + 2 + i);
 
-        if (c->out_flags & MOD_OUT_TRIGGER) {
+        if (triggers & (1U << i)) {
             level[i] = c->out_volume;
             screen_dec(PX + 2, y, c->sample, 2);
         } else if (level[i] > 3) {
@@ -648,42 +649,53 @@ static void draw_levels(void)
 
 static void stop(void)
 {
+    irq_off();
     mod_out_stop();
     playing = 0;
+    irq_on();
 }
 
 static void restart_at(uint8_t order)
 {
     uint8_t i;
 
+    irq_off();
     mod_out_stop();
     mod_player_init(&player, &mod.info, order);
+    mod_new_row = 0;
+    mod_ended = 0;
+    mod_triggers = 0;
     for (i = 0; i < MOD_CHANNELS; ++i) {
         level[i] = 0;
     }
     timebase_init();
     playing = 1;
+    irq_on();
     draw_settings();
 }
 
 static void stop_sid(void)
 {
     if (sid_loaded) {
+        sid_running = 0;
         sid_stop();
         sid_loaded = 0;
-        sid_running = 0;
     }
 }
 
 static void start_sid_song(uint8_t song)
 {
+    irq_off(); /* no play call while the init routine runs */
+    sid_running = 0;
     sid_start_song(&tune, song);
     sid_set_output(master, separation);
     sidvis_reset();
     sid_frames = 0;
     sid_seconds = 0;
-    sid_running = 1;
     timebase_init();
+    (void)timebase_new_frames();
+    sid_running = 1;
+    irq_on();
     draw_sid_position();
     if (view != VIEW_SCOPES || !sid_extras) {
         draw_sid_timing(VX + 10, VY + 9);
@@ -836,7 +848,8 @@ static void move_selection(int8_t delta)
     }
 }
 
-/* Ask before leaving; the music keeps its state if the answer is no. */
+/* Ask before leaving; the music keeps its state if the answer is no.
+ * Called with the playback interrupt off, so the music halts meanwhile. */
 static void confirm_quit(void)
 {
     uint8_t key;
@@ -979,11 +992,63 @@ static void handle_key(uint8_t key)
     }
 }
 
+/*
+ * Called by the playback interrupt about 2000 times per second (see
+ * hw/irq.h): makes the MOD tick or SID play call that is due and tells the
+ * main loop what happened. Everything else stays in the main loop.
+ */
+__attribute__((noinline)) static void playback_interrupt(void)
+{
+    uint8_t i;
+
+    if (sid_running) {
+        if (timebase_poll_rate(tune.rate16)) {
+            sid_play_tick();
+        }
+        return;
+    }
+    if (!playing || !timebase_poll(player.tempo)) {
+        return;
+    }
+    if (player.tick == 0) { /* this tick starts a new row */
+        shown_order = player.order;
+        shown_pattern = player.pattern;
+        shown_row = player.row;
+    }
+    mod_player_tick(&player);
+    mod_out_apply(&player, &mod);
+    for (i = 0; i < MOD_CHANNELS; ++i) {
+        if (player.ch[i].out_flags & MOD_OUT_TRIGGER) {
+            mod_triggers |= (uint8_t)(1U << i);
+        }
+    }
+    if (player.row_started) {
+        mod_new_row = 1;
+    }
+    if (player.song_looped) { /* the main loop starts the next file */
+        mod_out_stop();
+        playing = 0;
+        mod_ended = 1;
+    }
+    ++mod_ticks;
+}
+
+__attribute__((noinline)) static void run(void);
+
 int main(void)
+{
+    memmap_init();
+    /* Bank 0 below $B500 is full with code and data; the soft stack moves
+     * to the RAM at $E000-$FFF9 (KERNAL unmapped by memmap_init). */
+    MEMMAP_MOVE_STACK();
+    run();
+    return 0;
+}
+
+static void run(void)
 {
     uint8_t key;
 
-    memmap_init();
     mega65_io_enable();
     audio_dma_init();
     screen_init();
@@ -999,16 +1064,18 @@ int main(void)
     screen_box(PLAYER_X, PLAYER_Y, PLAYER_W, PLAYER_H, C_FRAME, "Player");
     draw_player_frame();
     draw_view();
+    timebase_init();
+    irq_init(playback_interrupt);
     read_directory();
 
     for (;;) {
         if (sid_running) {
-            if (timebase_poll_rate(tune.rate16)) {
-                sid_play_tick();
-            }
-            if (timebase_new_frame()) {
-                if (++sid_frames == timebase_frame_rate()) {
-                    sid_frames = 0;
+            uint8_t frames = timebase_new_frames();
+
+            if (frames) {
+                sid_frames += frames;
+                if (sid_frames >= timebase_frame_rate()) {
+                    sid_frames -= timebase_frame_rate();
                     ++sid_seconds;
                     draw_sid_position();
                     if (sid_limits[sid_limit_index] &&
@@ -1030,28 +1097,24 @@ int main(void)
                 --scopes_due;
             }
         }
-        if (playing && timebase_poll(player.tempo)) {
-            if (player.tick == 0) { /* this tick starts a new row */
-                shown_order = player.order;
-                shown_pattern = player.pattern;
-                shown_row = player.row;
-            }
-            mod_player_tick(&player);
-            mod_out_apply(&player, &mod);
+        if (loaded && mod_ticks != ticks_seen) {
+            ticks_seen = mod_ticks;
             draw_levels();
-            if (player.row_started) {
+            if (mod_new_row) {
+                mod_new_row = 0;
                 draw_position();
                 update_view();
             }
-            if (player.song_looped) {
+            if (mod_ended) {
+                mod_ended = 0;
                 play_next_file();
+                continue;
             }
         }
-        /* Oscilloscopes: all four traces once per video frame, but only
-         * one per pass through this loop so a tick is never late by more
-         * than one trace. */
+        /* Oscilloscopes: all four traces once per video frame, one per
+         * pass through this loop so the keyboard stays responsive. */
         if (playing && view == VIEW_SCOPES) {
-            if (timebase_new_frame()) {
+            if (timebase_new_frames()) {
                 scopes_due = MOD_CHANNELS;
             }
             if (scopes_due) {
@@ -1064,7 +1127,19 @@ int main(void)
         }
         key = keyboard_poll();
         if (key) {
+            /* keys that change what the interrupt works with */
+            uint8_t critical = (uint8_t)(key == ' ' || key == '+' ||
+                                         key == '-' || key == ',' ||
+                                         key == '.' || key == 'q' ||
+                                         key == 'Q');
+
+            if (critical) {
+                irq_off();
+            }
             handle_key(key);
+            if (critical) {
+                irq_on();
+            }
         }
     }
 }

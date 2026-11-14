@@ -22,7 +22,8 @@ static uint32_t threshold;
 static uint32_t threshold16;
 static uint16_t last_line;
 static uint32_t acc;
-static uint8_t frame_flag;
+static volatile uint8_t frames;
+static uint8_t frames_seen;
 
 static uint16_t raster(void)
 {
@@ -58,7 +59,7 @@ static uint16_t lines_elapsed(void)
 
     if (now != last_line) {
         if (now < last_line) {
-            frame_flag = 1;
+            ++frames;
         }
         delta = (uint16_t)(now >= last_line ? now - last_line
                                             : now + lines_per_frame - last_line);
@@ -95,11 +96,11 @@ uint8_t timebase_frame_rate(void)
     return (uint8_t)(lines_per_frame == NTSC_LINES ? 60 : 50);
 }
 
-uint8_t timebase_new_frame(void)
+uint8_t timebase_new_frames(void)
 {
-    if (frame_flag) {
-        frame_flag = 0;
-        return 1;
-    }
-    return 0;
+    uint8_t now = frames;
+    uint8_t n = (uint8_t)(now - frames_seen);
+
+    frames_seen = now;
+    return n;
 }

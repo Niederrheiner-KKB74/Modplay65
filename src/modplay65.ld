@@ -35,8 +35,14 @@ SECTIONS {
     } >hiram
 }
 
-/* Soft stack: grows down from the start of the glyph block. */
+/* Soft stack: the startup code uses it below the glyph block; main()
+ * then moves it to the top of the RAM at $E000-$FFF9, above .hibss
+ * (see MEMMAP_STACK in hw/memmap.h). */
 __stack = 0xb500;
+ASSERT(__bss_end + 0x20 <= 0xb500,
+       "program area full: no room left for the start-up stack below $B500")
+ASSERT(__hibss_end + 0x600 <= 0xfffa,
+       "less than 1.5 KB left for the soft stack above .hibss")
 
 OUTPUT_FORMAT {
     /* Tells the LOAD command where to place the file's contents. */

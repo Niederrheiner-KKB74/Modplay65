@@ -3,6 +3,7 @@ add_executable(modplay65
     hw/audio_dma.c
     hw/fileload.c
     hw/memmap.c
+    hw/irq.c
     hw/screen.c
     hw/system.c
     hw/timebase.c
@@ -26,6 +27,7 @@ target_link_options(modplay65 PRIVATE -Oz)
 # as well as size; everything else only for size.
 set_source_files_properties(
     hw/audio_dma.c
+    hw/irq.c
     hw/screen.c
     hw/timebase.c
     mod/mod_out.c

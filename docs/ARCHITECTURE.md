@@ -1,6 +1,6 @@
 # Modplay65 architecture
 
-Status: draft 8 (14 November 2026). MOD playback with visualisers and PSID
+Status: draft 9 (14 November 2026). MOD playback with visualisers and PSID
 playback with visualisers, volume and centred output work on real
 hardware, including 2SID tunes. Missing: RSID tunes; 3SID is untested. Items marked **[verify]** are assumptions that an early
 milestone must confirm on Xemu and on a real MEGA65. See [ROADMAP.md](ROADMAP.md) for the
@@ -62,8 +62,8 @@ src/
     timebase.[ch]     tick timing from the raster counter           (exists)
     fileload.[ch]     whole file from SD card to Attic RAM          (exists)
     memmap.[ch]       memory maps, trampoline page, IRQ stub        (exists)
+    irq.[ch]          playback interrupt (CIA 1 timer B)            (exists)
     sid.[ch]          SID chip access, model and mixer setup
-    irq.s             interrupt entry/exit, CIA timer setup
     bigmem.[ch]       far memory helpers on top of mega65-libc
   mod/              MOD support (portable)
     mod_load.[ch]     header parsing, sample placement              (exists)
@@ -90,7 +90,7 @@ docs/               this documentation
 | `$0002001-$000B4FF` (bank 0) | Program code, data, stack (own linker script `src/modplay65.ld`); about 36 KB of 37 KB used (Nov 2026) |
 | `$000B500-$000CEFF` (bank 0) | Glyph block: character set copy and pixel canvas (fixed address, see HARDWARE-NOTES.md) |
 | `$000CF00-$000CFFF` (bank 0) | Trampoline page: memory-map switches, SID call, IRQ stub (visible in the tune's memory map too) |
-| `$000E000-$000FFF9` (bank 0) | Large buffers (`.hibss`, not loaded): module and tune headers, directory, file buffer, scope and SID-visualiser buffers; RAM because Modplay65 switches the KERNAL off (`$01 = $35`, block 7 unmapped) and points the CPU vectors to the IRQ stub; BASIC is restored on exit |
+| `$000E000-$000FFF9` (bank 0) | Large buffers (`.hibss`, not loaded): module and tune headers, player state, directory, file buffer, scope and SID-visualiser buffers; above them the soft stack (at least 1.5 KB, checked by the linker). RAM because Modplay65 switches the KERNAL off (`$01 = $35`, block 7 unmapped); the IRQ vector points to the playback interrupt, the other vectors to a stub; BASIC is restored on exit |
 | `$0010000-$0011FFF` (bank 1) | DOS, do not touch |
 | `$0012000-$001F7FF` (bank 1) | 54 KB sample playback memory (below the colour RAM window at `$1F800`) |
 | `$0020000-$003FFFF` (banks 2-3) | ROM, write-protected |
@@ -159,16 +159,30 @@ the frequency register with one 32-bit division per change.
 
 One tick lasts `2.5 / BPM` seconds (20 ms at the default 125 BPM).
 
-Current implementation: the main loop polls the VIC raster line counter
-(`$D011/$D012`), adds `lines * BPM` to an accumulator and runs a tick each
-time it passes 2.5 seconds worth of lines (PAL 15625 lines/s, NTSC 15734).
-This needs no interrupts, has about 64 µs resolution and behaves the same
-on hardware and in Xemu. CIA timers were rejected as timebase because
-Xemu does not run them at the hardware rate. The main loop must come back
-to the poll at least once per video frame.
+The time comes from the VIC raster line counter (`$D011/$D012`): an
+accumulator adds `lines * BPM` and a tick is due each time it passes 2.5
+seconds worth of lines (PAL 15625 lines/s, NTSC 15734). This behaves the
+same on hardware and in Xemu; CIA timers are not used as timebase because
+Xemu does not run them at the hardware rate.
 
-Planned: move the tick into a raster interrupt when screen updates become
-long enough to delay it.
+The check runs in an interrupt (`src/hw/irq.c`): CIA 1 timer B interrupts
+about 2000 times per second, and the handler makes the MOD tick or SID
+play call that is due. The CIA's exact rate therefore does not matter;
+it only limits the jitter to about 0.5 ms. Timer A stays free for SID
+tunes that set it for CIA timing. The handler publishes what the main loop
+needs (tick counter, new row, note triggers, end of song); the main loop
+only draws, so slow screen work can no longer delay the music.
+
+Points to watch:
+
+- mega65-libc has one DMA list. The handler reads pattern rows with
+  `lcopy()`, so it saves and restores that list; a DMA job the main
+  program was setting up is then not lost.
+- Code that changes what the handler works with (pause, song position,
+  volume, a new SID song) runs with interrupts off (`irq_off/irq_on`).
+- The soft stack lives at `$E000-$FFF9` above the `.hibss` buffers (main
+  moves it there after start-up), because bank 0 below `$B500` is full.
+  About 0.8 KB of the 2.2 KB were used in a test run.
 
 Per tick, the player:
 
@@ -230,15 +244,17 @@ a tune cannot simply be loaded where it wants to be.
   block 0 is unmapped), so a tune cannot change the real ROM/I/O banking.
 - After the call the trampoline does `SEI`, `CLD`, restores the normal map
   and clears Z, which the compiled code relies on.
-- Interrupts: Modplay65 runs with interrupts disabled. Before init all chip
-  interrupt sources are switched off, and the tune's vectors at
-  `$FFFA-$FFFF` point to a stub that acknowledges and returns, in case a
-  tune enables interrupts itself.
+- Interrupts: play calls come from Modplay65's own interrupt (section
+  6.4); the trampoline keeps interrupts off while the tune's map is
+  active. Init runs with interrupts off and all chip interrupt sources
+  switched off; afterwards timer B is switched on again and timer A's
+  interrupt off. The tune's vectors at `$FFFA-$FFFF` point to a stub that
+  acknowledges and returns, in case a tune enables interrupts itself.
 - Timing: VBI tunes are called at 50.125 Hz (PAL) or 59.826 Hz (NTSC),
   CIA tunes at the rate of the CIA1 timer A value their init routine set
   (timer stopped and loaded with `$FFFF` beforehand to detect it). The
-  rate comes from the raster line counter (`timebase_poll_rate`), so it
-  does not depend on the MEGA65's own video mode.
+  rate comes from the raster line counter (`timebase_poll_rate`, checked
+  in the interrupt), so it does not depend on the MEGA65's own video mode.
 - The tune runs at the full 40.5 MHz. No problems with the test tunes.
 
 Verified (November 2026): Commando (songs 1 and 2) and Katakis produce,
@@ -293,10 +309,9 @@ the info panel says so. Centring and volume confirmed on real hardware
   between oscilloscopes, pattern view and sample list.
 - Input: keyboard, read from the hardware key queue. Mouse support is an
   optional later step.
-- Screen updates happen in the main loop between ticks. Because the tick
-  is polled (section 6.4), no pass through the loop may take longer than
-  one video frame; the scopes therefore draw one trace per pass and avoid
-  multiplications.
+- Screen updates happen in the main loop; the music runs in the
+  interrupt (section 6.4). The scopes draw one trace per pass so the
+  keyboard stays responsive.
 
 ### File access
 
@@ -328,10 +343,8 @@ the visualiser (`src/vis/sidvis.c`) copies SID 1's 25 registers and
 - adds the three voices, scaled by the master volume, for the mix trace.
 
 For 2SID tunes V switches to the second SID's voices before the tune
-info. Drawing one trace takes several milliseconds, longer than the
-5 ms between play calls of a 200 Hz tune; the scope code therefore calls
-a hook (`scope_poll`) every 16 points that makes any play call that is
-due. Without it a 200 Hz tune ran about 4 % slow with the scopes shown.
+info. Play calls come from the interrupt (section 6.4), so drawing a trace
+(several milliseconds) does not delay a 200 Hz tune.
 
 Filter, ring modulation and sync are not modelled; the traces show what
 the voices play, not the exact output. On cores before 0.97 the loopback

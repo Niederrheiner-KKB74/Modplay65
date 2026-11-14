@@ -40,4 +40,19 @@ void memmap_basic(void);
  */
 void memmap_call_tune(uint16_t address, uint8_t a);
 
+/*
+ * Top of the soft stack after start-up: the RAM under the KERNAL, below
+ * the CPU vectors, grows down towards the .hibss buffers.
+ */
+#define MEMMAP_STACK 0xFFFAU
+
+/*
+ * Moves the soft stack pointer to MEMMAP_STACK. Use only in a function
+ * without stack frame, after memmap_init(), and call the rest of the
+ * program from there through a function that is not inlined.
+ */
+#define MEMMAP_MOVE_STACK()                                                  \
+    __asm__ volatile("lda #<0xfffa\n sta __rc0\n lda #>0xfffa\n sta __rc1" \
+                     ::: "a", "memory")
+
 #endif

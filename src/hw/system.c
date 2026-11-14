@@ -6,11 +6,13 @@
 #include <stdint.h>
 
 #include "hw/audio_dma.h"
+#include "hw/irq.h"
 #include "hw/memmap.h"
 #include "hw/screen.h"
 
 void system_exit_to_basic(void)
 {
+    irq_shutdown();
     audio_dma_shutdown();
     screen_restore();
     /* The reset vector must come from the C65 KERNAL, so switch to the

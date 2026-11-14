@@ -2,8 +2,8 @@
  * Modplay65 - tick timebase derived from the video raster line counter.
  *
  * The raster counter runs at a known line rate on PAL and NTSC, on real
- * hardware and in Xemu alike, and needs no interrupts. (Xemu's CIA timers
- * do not run at the hardware rate, so they are not used.)
+ * hardware and in Xemu alike. (Xemu's CIA timers do not run at the
+ * hardware rate, so they only trigger the polls, see hw/irq.h.)
  * timebase_poll() must be called at least once per video frame.
  */
 #ifndef MODPLAY65_HW_TIMEBASE_H
@@ -27,9 +27,10 @@ uint8_t timebase_poll_rate(uint16_t rate16);
 uint8_t timebase_frame_rate(void);
 
 /*
- * Returns 1 once per video frame (when the raster counter has wrapped
- * since the last call that returned 1). Updated by timebase_poll().
+ * Number of video frames that started since the last call (the raster
+ * counter wrapped). Updated by timebase_poll() and timebase_poll_rate(),
+ * which run in the interrupt; this one is for the main program.
  */
-uint8_t timebase_new_frame(void);
+uint8_t timebase_new_frames(void);
 
 #endif
