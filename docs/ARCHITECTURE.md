@@ -2,7 +2,7 @@
 
 Status: draft 8 (14 November 2026). MOD playback with visualisers and PSID
 playback with visualisers, volume and centred output work on real
-hardware. Missing: RSID tunes; 2SID stereo is untested. Items marked **[verify]** are assumptions that an early
+hardware, including 2SID tunes. Missing: RSID tunes; 3SID is untested. Items marked **[verify]** are assumptions that an early
 milestone must confirm on Xemu and on a real MEGA65. See [ROADMAP.md](ROADMAP.md) for the
 order of work and [HARDWARE-NOTES.md](HARDWARE-NOTES.md) for register details.
 
@@ -278,7 +278,7 @@ The original levels and `$D63C` are saved at start and restored when a
 MOD is played or the program exits. On cores before 0.97 these registers
 do not exist; SID tunes then play with the hardware default routing and
 the info panel says so. Centring and volume confirmed on real hardware
-(14 Nov 2026); the 2SID stereo width has not been tested yet.
+(14 Nov 2026), the 2SID stereo width as well.
 
 ## 8. User interface
 

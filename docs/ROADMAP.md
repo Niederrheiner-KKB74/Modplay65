@@ -140,7 +140,8 @@ initial scope). All three are PAL, 6581, one SID.
 - [x] Volume (`+`/`-`) and stereo width (`,`/`.`) for SID tunes
 - [x] Confirmed on real hardware (14 Nov 2026): centred mono tunes,
       volume keys, voice scopes and V toggle, MOD stereo afterwards, exit
-- [ ] Stereo width for 2SID tunes: confirm on real hardware
+- [x] 2SID on real hardware (14 Nov 2026): first SID left, second right,
+      stereo width keys, tempo and the V views confirmed
 
 ## M8 - Polish and release
 
