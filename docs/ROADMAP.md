@@ -145,8 +145,13 @@ initial scope). All three are PAL, 6581, one SID.
 
 ## M8 - Polish and release
 
-- [ ] Playlist and automatic advance to the next file
-- [ ] D81 and floppy file access
+- [x] Automatic advance to the next file, also for SID tunes: time limit
+      per tune (key L: 3, 5, 10 minutes, off, 1, 2)
+- [ ] Playlist (own order, across directories)
+- [ ] D81 and floppy file access for music files
 - [ ] Optional mouse support
-- [ ] D81 release image built by CI
-- [ ] User documentation
+- [x] D81 image built by CI (`tools/mkd81`), loads and runs in Xemu; a
+      tag `vX.Y.Z` creates a GitHub release with PRG and D81
+- [x] User documentation in the README
+- [x] Release 0.2.0 (14 Nov 2026): D81 start, SID time limit and all
+      functions confirmed on real hardware

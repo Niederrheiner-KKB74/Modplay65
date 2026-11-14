@@ -96,6 +96,11 @@ static uint8_t shown_order, shown_pattern, shown_row;
 static uint8_t scopes_due; /* traces still to draw in this video frame */
 static uint8_t master = 64;    /* 0..64                               */
 static uint8_t separation = 4; /* 0..4                                */
+/* SID tunes do not end: after this many minutes the next file is played
+ * (0 = never). L cycles through the values. */
+static const uint8_t sid_limits[] = { 3, 5, 10, 0, 1, 2 };
+static uint8_t sid_limit_index;
+static void draw_sid_limit(void);
 static uint8_t level[MOD_CHANNELS];
 static uint8_t marked[MOD_CHANNELS]; /* sample shown as playing, 0 = none */
 
@@ -117,8 +122,8 @@ static void status(const char *text, uint8_t colour)
 static void help(void)
 {
     if (sid_loaded) {
-        status("RETURN play  SPACE pause  CRSR file/song  +- vol  ,. stereo  "
-               "V view  Q quit", C_LABEL);
+        status("RET play  SPC pause  CRSR file/song  +- vol  ,. stereo  "
+               "L time  V view  Q quit", C_LABEL);
         return;
     }
     status("RETURN play  SPACE pause  CRSR file/position  +- vol  ,. stereo  "
@@ -549,6 +554,7 @@ static void draw_player_frame(void)
         screen_puts(PX, PY + 4, "Song");
         screen_puts(PX + 8, PY + 4, "/");
         screen_puts(PX + 15, PY + 4, "Time");
+        draw_sid_limit();
         screen_puts(PX + 22, PY + 4, ":");
         screen_colour(PX, PY + 4, PLAYER_W - 2, C_LABEL);
         screen_dec(PX + 9, PY + 4, tune.info.songs, 3);
@@ -589,6 +595,20 @@ static void draw_sid_position(void)
     }
     screen_colour(PX + 5, PY + 4, 3, C_BRIGHT);
     screen_colour(PX + 20, PY + 4, 5, C_BRIGHT);
+}
+
+/* Time limit after the playing time: "/ 3:00", or nothing when off. */
+static void draw_sid_limit(void)
+{
+    uint8_t minutes = sid_limits[sid_limit_index];
+
+    screen_putn(PX + 26, PY + 4, "", 7);
+    if (minutes) {
+        screen_puts(PX + 26, PY + 4, "/");
+        screen_dec(PX + 27, PY + 4, minutes, 2);
+        screen_puts(PX + 29, PY + 4, ":00");
+    }
+    screen_colour(PX + 26, PY + 4, 7, C_LABEL);
 }
 
 static void draw_position(void)
@@ -757,7 +777,12 @@ static void play_next_file(void)
         index = (uint8_t)(index + 1 < dir_count ? index + 1 : 0);
         if (!dir_entry(index)->is_dir) {
             if (index == current) {
-                restart_at(0); /* the only file: play it again */
+                /* the only file: play it again */
+                if (sid_loaded) {
+                    start_sid_song(tune.info.start_song);
+                } else {
+                    restart_at(0);
+                }
                 return;
             }
             if (load_and_play(index)) {
@@ -914,6 +939,14 @@ static void handle_key(uint8_t key)
         sid_set_output(master, separation);
         draw_settings();
         break;
+    case 'l':
+    case 'L':
+        sid_limit_index = (uint8_t)(sid_limit_index + 1 < sizeof(sid_limits)
+                                        ? sid_limit_index + 1 : 0);
+        if (sid_loaded) {
+            draw_sid_limit();
+        }
+        break;
     case 's':
     case 'S':
         if (view == VIEW_SAMPLES && loaded &&
@@ -978,6 +1011,11 @@ int main(void)
                     sid_frames = 0;
                     ++sid_seconds;
                     draw_sid_position();
+                    if (sid_limits[sid_limit_index] &&
+                        sid_seconds >= (uint16_t)sid_limits[sid_limit_index] * 60) {
+                        play_next_file();
+                        continue;
+                    }
                 }
                 if (sid_extras && view == VIEW_SCOPES) {
                     sid_read_regs(vis_sid, sid_regs);

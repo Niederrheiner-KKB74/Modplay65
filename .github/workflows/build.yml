@@ -2,11 +2,13 @@ name: Build
 
 on:
   push:
+    branches: ['**']
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write  # only used by the release step for v* tags
 
 env:
   LLVM_MOS_SDK_VERSION: v23.4.0
@@ -35,14 +37,27 @@ jobs:
       - name: Build
         run: cmake --build build
 
+      - name: D81 image
+        run: python3 tools/mkd81/mkd81.py build/modplay65.d81 "MODPLAY65,65" build/modplay65.prg
+
       - name: Show result
         run: |
-          ls -l build/modplay65.prg
-          sha256sum build/modplay65.prg
+          ls -l build/modplay65.prg build/modplay65.d81
+          sha256sum build/modplay65.prg build/modplay65.d81
 
-      - name: Upload PRG
+      - name: Upload PRG and D81
         uses: actions/upload-artifact@v4
         with:
-          name: modplay65-prg
-          path: build/modplay65.prg
+          name: modplay65
+          path: |
+            build/modplay65.prg
+            build/modplay65.d81
           if-no-files-found: error
+
+      - name: Release (tags v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" build/modplay65.prg build/modplay65.d81 \
+            --title "Modplay65 ${GITHUB_REF_NAME#v}" --notes-file docs/RELEASE-NOTES.md
