@@ -2,6 +2,7 @@ add_executable(modplay65
     main.c
     hw/audio_dma.c
     hw/fileload.c
+    hw/memmap.c
     hw/screen.c
     hw/system.c
     hw/timebase.c

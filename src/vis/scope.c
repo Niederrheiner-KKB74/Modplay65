@@ -8,6 +8,7 @@
 #include "vis/scope.h"
 
 #include "hw/audio_dma.h"
+#include "hw/memmap.h"
 #include "hw/screen.h"
 
 #define POINTS (SCOPE_CELLS_W * 4) /* one sample every two pixels */
@@ -20,9 +21,9 @@ static const uint8_t colours[SCOPE_CHANNELS] = {
 static const uint8_t masks[4] = { 0xC0, 0x30, 0x0C, 0x03 };
 
 /* Pixel rows currently lit in each column, to erase them again. */
-static uint8_t old_lo[SCOPE_CHANNELS][POINTS];
-static uint8_t old_hi[SCOPE_CHANNELS][POINTS];
-static uint8_t samples[POINTS];
+static MEMMAP_HIGH uint8_t old_lo[SCOPE_CHANNELS][POINTS];
+static MEMMAP_HIGH uint8_t old_hi[SCOPE_CHANNELS][POINTS];
+static MEMMAP_HIGH uint8_t samples[POINTS];
 static uint8_t shown;
 
 void scope_show(uint8_t x, uint8_t y)

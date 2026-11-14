@@ -14,6 +14,7 @@
 
 #include "hw/audio_dma.h"
 #include "hw/keyboard.h"
+#include "hw/memmap.h"
 #include "hw/screen.h"
 #include "hw/system.h"
 #include "hw/timebase.h"
@@ -65,9 +66,9 @@
 #define C_BAR COL_LGREEN
 #define C_ERROR COL_PINK
 
-static struct mod_file mod;
+static MEMMAP_HIGH struct mod_file mod;
 static struct mod_player player;
-static struct sid_tune tune;
+static MEMMAP_HIGH struct sid_tune tune;
 
 static uint8_t sid_loaded;     /* a SID tune is in memory             */
 static uint8_t sid_running;    /* its play routine is being called    */
@@ -800,6 +801,7 @@ int main(void)
 {
     uint8_t key;
 
+    memmap_init();
     mega65_io_enable();
     audio_dma_init();
     screen_init();

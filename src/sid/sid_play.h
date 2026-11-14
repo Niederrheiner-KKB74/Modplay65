@@ -1,11 +1,10 @@
 /*
  * Modplay65 - play PSID tunes on the MEGA65's SID chips (MEGA65 only).
  *
- * The tune runs in its own 64 KB "C64 memory" in chip RAM bank 4. Before
- * each call of the tune's init or play routine, a small trampoline at
- * $CF00 uses the 45GS02's MAP instruction to show bank 4 in place of
- * bank 0, except for $C000-$DFFF: that block stays unmapped so the I/O
- * area (and with it the SID at $D400) remains visible. See
+ * The tune runs in its own 64 KB "C64 memory" in chip RAM bank 4. Each
+ * call of the tune's init or play routine goes through memmap_call_tune(),
+ * which shows bank 4 in place of bank 0 except for $C000-$DFFF, so the I/O
+ * area (and with it the SID at $D400) stays visible. See hw/memmap.h and
  * docs/ARCHITECTURE.md, section 7.
  */
 #ifndef MODPLAY65_SID_SID_PLAY_H
@@ -37,7 +36,7 @@ struct sid_tune {
     uint16_t rate16;   /* play calls per second times 16                */
 };
 
-/* Install the trampoline and set the normal memory map. Call once. */
+/* Remember the SID settings found at start-up. Call once. */
 void sid_system_init(void);
 
 /* Load a SID file and check that it can be played. */
