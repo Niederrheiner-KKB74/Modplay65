@@ -155,6 +155,5 @@ initial scope). All three are PAL, 6581, one SID.
 - [x] User documentation in the README
 - [x] Version 0.2.0 (14 Nov 2026): D81 start, SID time limit and all
       functions confirmed on real hardware; on `main`
-- [ ] Publish release v0.2.0 on GitHub (tag pushes are blocked in the
-      Claude session; publishing the release in the web interface makes
-      the build attach PRG and D81)
+- [x] Release v0.2.0 published on GitHub (14 Nov 2026); the build
+      attached PRG and D81 automatically
