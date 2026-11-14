@@ -32,4 +32,11 @@ void scope_draw_samples(uint8_t channel, const int8_t *samples,
 /* Draw a flat line for a channel (nothing playing). */
 void scope_flat(uint8_t channel);
 
+/*
+ * Called every 16 points while a trace is drawn, if set. Drawing one trace
+ * takes several milliseconds; a SID tune with a fast play rate uses this
+ * to keep its play calls on time.
+ */
+extern void (*scope_poll)(void);
+
 #endif

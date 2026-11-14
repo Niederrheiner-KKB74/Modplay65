@@ -20,22 +20,23 @@ class CPU:
         self.sp = 0xFF
         self.p = 0x24
         self.pc = 0
-        self.sid = [0] * 32
+        self.sid = [0] * 128
         self.writes = 0
 
-    # memory: $D400-$D7FF is the SID (mirrored every 32 bytes)
+    # memory: $D400-$D7FF holds four SIDs at $D400/$D420/$D440/$D460,
+    # mirrored every 128 bytes (as on the MEGA65)
     def rd(self, a):
         a &= 0xFFFF
         if 0xD400 <= a < 0xD800:
-            r = a & 0x1F
-            return 0 if r in (0x1B, 0x1C) else self.sid[r]
+            r = a & 0x7F
+            return 0 if (r & 0x1F) in (0x1B, 0x1C) else self.sid[r]
         return self.m[a]
 
     def wr(self, a, v):
         a &= 0xFFFF
         v &= 0xFF
         if 0xD400 <= a < 0xD800:
-            self.sid[a & 0x1F] = v
+            self.sid[a & 0x7F] = v
             self.writes += 1
         else:
             self.m[a] = v
@@ -344,12 +345,21 @@ def main():
     mem = bytearray(0x10000)
     mem[load:load + len(data)] = data
     mem[0], mem[1] = 0x2F, 0x37
+    # second SID (PSID v3+): byte $7A, address $Dxx0; only $D420-$D460 here
+    sid2 = None
+    if d[5] >= 3 and off >= 0x7C and d[0x7A]:
+        a2 = 0xD000 | (d[0x7A] << 4)
+        if a2 in (0xD420, 0xD440, 0xD460):
+            sid2 = a2 - 0xD400
     cpu = CPU(mem)
     cpu.call(init, song - 1)
     print('init: %d SID writes' % cpu.writes)
     for n in range(1, calls + 1):
         cpu.call(play)
-        print('%d %s' % (n, ' '.join('%02X' % v for v in cpu.sid[:25])))
+        line = ' '.join('%02X' % v for v in cpu.sid[:25])
+        if sid2 is not None:
+            line += ' | ' + ' '.join('%02X' % v for v in cpu.sid[sid2:sid2 + 25])
+        print('%d %s' % (n, line))
 
 
 if __name__ == '__main__':

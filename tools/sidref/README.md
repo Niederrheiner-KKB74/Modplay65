@@ -2,7 +2,8 @@
 
 `sidref.py` runs a PSID tune in a minimal 6502 emulator written for this
 project (legal NMOS opcodes only, no SID sound) and prints the SID register
-state ($D400-$D418) after every play call:
+state ($D400-$D418) after every play call; for 2SID tunes with the second
+SID at $D420, $D440 or $D460 its registers follow after a `|`:
 
 ```sh
 python3 tools/sidref/sidref.py tune.sid [song] [calls] > ref.txt

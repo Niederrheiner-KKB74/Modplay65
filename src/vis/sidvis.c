@@ -128,20 +128,24 @@ void sidvis_mix(int8_t *out, uint8_t n, int8_t *const wave[SIDVIS_VOICES])
 {
     uint8_t volume = (uint8_t)(sidvis_regs[24] & 15);
     uint8_t voices = (uint8_t)((sidvis_regs[24] & 0x80) ? 2 : 3);
-    uint8_t lv[SIDVIS_VOICES];
+    uint8_t gain[SIDVIS_VOICES];
     uint8_t v, i;
 
+    /* Output = sum of wave x level/256, scaled so that three full voices
+     * (+-381) at volume 15 give +-127 x 15/16: x volume / 48. Folded into
+     * one gain per voice, wave x gain / 512 (/4, then /128) with gain = level x volume / 24
+     * (0-159), so the loop needs no division and only 8 x 8 bit products. */
     for (v = 0; v < SIDVIS_VOICES; ++v) {
-        lv[v] = sidvis_level(v);
+        gain[v] = (uint8_t)((uint16_t)sidvis_level(v) * volume / 24);
     }
     for (i = 0; i < n; ++i) {
         int16_t sum = 0;
 
         for (v = 0; v < voices; ++v) {
-            sum += (int16_t)(((int16_t)wave[v][i] * lv[v]) >> 8);
+            /* each term up to +-20352; /4 keeps the sum within 16 bits */
+            sum += (int16_t)(((int16_t)wave[v][i] * gain[v]) >> 2);
         }
-        /* three full voices: +-381; scale to +-127 times volume / 16 */
-        sum = (int16_t)(((int32_t)sum * volume) / 48);
+        sum >>= 7;
         out[i] = (int8_t)(sum > 127 ? 127 : sum < -128 ? -128 : sum);
     }
 }

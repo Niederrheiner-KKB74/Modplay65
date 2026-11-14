@@ -257,7 +257,7 @@ Confirmed by ear on real hardware on 14 November 2026.
 - **Known gaps:** a tune that writes to `$C000-$CFFF` outside its own data
   overwrites Modplay65's glyph block (screen garbage, not a crash). Tunes
   that use illegal 6502 opcodes fail, because those opcodes are 45GS02
-  instructions. 2SID/3SID tunes are untested.
+  instructions. 3SID tunes are untested.
 - Pause switches off waveform and gate of the voices but keeps the volume
   register, because many tunes set it only once in their init routine.
 
@@ -326,6 +326,12 @@ the visualiser (`src/vis/sidvis.c`) copies SID 1's 25 registers and
   triangle, sawtooth, pulse with the pulse width, noise from a small LFSR,
   combined waveforms ANDed; scaled by the envelope;
 - adds the three voices, scaled by the master volume, for the mix trace.
+
+For 2SID tunes V switches to the second SID's voices before the tune
+info. Drawing one trace takes several milliseconds, longer than the
+5 ms between play calls of a 200 Hz tune; the scope code therefore calls
+a hook (`scope_poll`) every 16 points that makes any play call that is
+due. Without it a 200 Hz tune ran about 4 % slow with the scopes shown.
 
 Filter, ring modulation and sync are not modelled; the traces show what
 the voices play, not the exact output. On cores before 0.97 the loopback
