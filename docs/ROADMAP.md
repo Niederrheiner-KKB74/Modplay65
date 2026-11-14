@@ -153,4 +153,5 @@ initial scope). All three are PAL, 6581, one SID.
 - [x] D81 image built by CI (`tools/mkd81`), loads and runs in Xemu; a
       tag `vX.Y.Z` creates a GitHub release with PRG and D81
 - [x] User documentation in the README
-- [ ] Release 0.2.0 after the hardware test
+- [x] Release 0.2.0 (14 Nov 2026): D81 start, SID time limit and all
+      functions confirmed on real hardware
