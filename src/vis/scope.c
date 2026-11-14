@@ -88,7 +88,7 @@ static void build_scale(uint8_t volume)
     scaled_volume = volume;
 }
 
-static void draw(uint8_t channel, uint8_t volume)
+static void draw(uint8_t channel, const uint8_t *src, uint8_t volume)
 {
     uint8_t base = (uint8_t)(channel * HEIGHT);
     uint8_t prev = CENTRE;
@@ -99,7 +99,7 @@ static void draw(uint8_t channel, uint8_t volume)
     }
 
     for (i = 0; i < POINTS; ++i) {
-        int8_t v = scaled[samples[i]];
+        int8_t v = scaled[src[i]];
         uint8_t y;
         uint8_t lo, hi;
         uint16_t x = (uint16_t)i * 2;
@@ -137,7 +137,14 @@ void scope_draw(uint8_t channel, uint8_t dma, uint8_t volume)
         return;
     }
     audio_dma_peek(dma, samples, POINTS);
-    draw(channel, volume);
+    draw(channel, samples, volume);
+}
+
+void scope_draw_samples(uint8_t channel, const int8_t *src, uint8_t volume)
+{
+    if (shown) {
+        draw(channel, (const uint8_t *)src, volume);
+    }
 }
 
 void scope_flat(uint8_t channel)
@@ -150,5 +157,5 @@ void scope_flat(uint8_t channel)
     for (i = 0; i < POINTS; ++i) {
         samples[i] = 0;
     }
-    draw(channel, 0);
+    draw(channel, samples, 0);
 }

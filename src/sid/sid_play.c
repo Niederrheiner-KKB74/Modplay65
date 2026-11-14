@@ -25,12 +25,105 @@
 #define PAL_VBI16 802           /* 50.125 Hz x 16  */
 #define NTSC_VBI16 957          /* 59.826 Hz x 16  */
 
+#define SIDMODE_EXTRA 0x10 /* makes the per-SID volume registers writable */
+#define LOOPBACK 0xFF65000UL
+#define PAN_LEFT 0x1D
+#define PAN_RIGHT 0x1E
+#define CENTRE_LEVEL 0xC0  /* centred one-SID tune at full volume: both
+                            * sides are summed later, so stay below $FF */
+
+uint8_t sid_extras;
 static uint8_t saved_sidmode;
+static uint8_t saved_pan[SID_COUNT * 2];
 static const struct psid_info *current;
+
+static volatile uint8_t *sid_chip(uint8_t n)
+{
+    return (volatile uint8_t *)(SID_BASE + n * 0x20U);
+}
+
+/* Write a test value to SID 1 and look for it in the loopback area. */
+static uint8_t detect_extras(void)
+{
+    volatile uint8_t *sid = sid_chip(0);
+    uint8_t ok;
+
+    sid[0] = 0xA5;
+    ok = (uint8_t)(lpeek(LOOPBACK) == 0xA5);
+    sid[0] = 0x5A;
+    ok = (uint8_t)(ok && lpeek(LOOPBACK) == 0x5A);
+    sid[0] = 0;
+    return ok;
+}
 
 void sid_system_init(void)
 {
+    uint8_t n;
+
     saved_sidmode = SIDMODE;
+    sid_extras = detect_extras();
+    if (!sid_extras) {
+        return;
+    }
+    SIDMODE = (uint8_t)(saved_sidmode | SIDMODE_EXTRA);
+    for (n = 0; n < SID_COUNT; ++n) {
+        saved_pan[n * 2] = sid_chip(n)[PAN_LEFT];
+        saved_pan[n * 2 + 1] = sid_chip(n)[PAN_RIGHT];
+    }
+    SIDMODE = saved_sidmode;
+}
+
+void sid_read_regs(uint8_t n, uint8_t *dst)
+{
+    lcopy(LOOPBACK + n * 0x20U, (uint32_t)(uintptr_t)dst, 25);
+}
+
+/*
+ * The volume registers are written with the extra registers enabled and
+ * then locked again, so a tune that clears $D400-$D41F cannot change them.
+ */
+static void write_pans(const uint8_t *pan)
+{
+    uint8_t mode = SIDMODE;
+    uint8_t n;
+
+    SIDMODE = (uint8_t)(mode | SIDMODE_EXTRA);
+    for (n = 0; n < SID_COUNT; ++n) {
+        sid_chip(n)[PAN_LEFT] = pan[n * 2];
+        sid_chip(n)[PAN_RIGHT] = pan[n * 2 + 1];
+    }
+    SIDMODE = (uint8_t)(mode & (uint8_t)~SIDMODE_EXTRA);
+}
+
+/* Index 0..3 of the SID at a tune's second/third SID address. */
+static uint8_t sid_index(uint16_t address)
+{
+    return (uint8_t)((address - SID_BASE) >> 5);
+}
+
+void sid_set_output(uint8_t volume, uint8_t separation)
+{
+    uint8_t pan[SID_COUNT * 2];
+    uint8_t full = (uint8_t)(((uint16_t)0xFF * volume) >> 6);
+    uint8_t centre = (uint8_t)(((uint16_t)CENTRE_LEVEL * volume) >> 6);
+    uint8_t other = (uint8_t)(((uint16_t)full * (uint8_t)(4 - separation)) >> 2);
+    uint8_t n;
+
+    if (!sid_extras || !current) {
+        return;
+    }
+    for (n = 0; n < SID_COUNT * 2; ++n) {
+        pan[n] = centre; /* unused SIDs are silent; centre is harmless */
+    }
+    if (current->sid2) {
+        /* first SID left, second right, a third one in the centre */
+        pan[0] = full;
+        pan[1] = other;
+        n = sid_index(current->sid2);
+        pan[n * 2] = other;
+        pan[n * 2 + 1] = full;
+    }
+    write_pans(pan);
 }
 
 void sid_silence(void)
@@ -62,6 +155,9 @@ void sid_pause(void)
 void sid_stop(void)
 {
     sid_silence();
+    if (sid_extras) {
+        write_pans(saved_pan);
+    }
     SIDMODE = saved_sidmode;
     current = 0;
 }
@@ -152,7 +248,7 @@ void sid_start_song(struct sid_tune *tune, uint8_t song)
     tune->song = song;
     current = info;
     sid_silence();
-    SIDMODE = (uint8_t)((saved_sidmode & 0xF0) |
+    SIDMODE = (uint8_t)((saved_sidmode & 0xE0) |
                         (info->model == PSID_MODEL_8580 ? 0x0F : 0x00));
 
     /* Fresh C64 memory: init routines change their own data. */
