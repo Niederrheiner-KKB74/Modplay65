@@ -117,8 +117,9 @@ initial scope). All three are PAL, 6581, one SID.
 - [x] CPU speed: tunes run at 40.5 MHz; no problems with the test tunes
 - [x] Heard on real hardware (14 Nov 2026): Commando and Katakis correct,
       song change, pause/resume and MOD after SID all work
-- [ ] Decide the register shadow question for visualisation
-- [ ] Mixer setup so one-SID tunes are centred
+- [x] Register shadow question: decided for the core 0.97 loopback
+      (`$FF65000`), no shadow copy needed
+- [x] One-SID tunes centred with the per-SID level registers (core 0.97+)
 
 ## M7 - SID integration
 
@@ -128,9 +129,13 @@ initial scope). All three are PAL, 6581, one SID.
       `$C000-$DFFF`, unsupported second SID address)
 - [x] Pause without losing the tune's volume setting
 - [ ] 2SID and 3SID tunes: allowed for `$D420/$D440/$D460`, untested
-- [ ] Visualisers for SID (master scope from the mixer read-back)
-- [ ] Program memory: only about 800 bytes left; must be freed before the
-      SID visualisers
+- [x] Program memory freed: large buffers moved to the RAM under the
+      KERNAL at `$E000-$FFFF` (about 9 KB)
+- [x] SID visualisers: three voice scopes and a mix trace rebuilt from the
+      register loopback, per-voice note/waveform/ADSR labels, V switches
+      to the tune info
+- [x] Volume (`+`/`-`) and stereo width (`,`/`.`) for SID tunes
+- [ ] Confirm visualisers, centring and volume on real hardware
 
 ## M8 - Polish and release
 

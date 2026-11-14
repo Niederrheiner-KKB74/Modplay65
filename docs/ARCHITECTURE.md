@@ -87,7 +87,8 @@ docs/               this documentation
 | `$0000800-$00017FF` (bank 0) | Screen RAM (4000 bytes in 16-bit character mode) |
 | `$0002001-$000B4FF` (bank 0) | Program code, data, stack (own linker script `src/modplay65.ld`); about 36 KB of 37 KB used (Nov 2026) |
 | `$000B500-$000CEFF` (bank 0) | Glyph block: character set copy and pixel canvas (fixed address, see HARDWARE-NOTES.md) |
-| `$000CF00-$000CFFF` (bank 0) | SID trampoline (visible in the tune's memory map too) |
+| `$000CF00-$000CFFF` (bank 0) | Trampoline page: memory-map switches, SID call, IRQ stub (visible in the tune's memory map too) |
+| `$000E000-$000FFF9` (bank 0) | Large buffers (`.hibss`, not loaded): module and tune headers, directory, file buffer, scope and SID-visualiser buffers; RAM because Modplay65 switches the KERNAL off (`$01 = $35`, block 7 unmapped) and points the CPU vectors to the IRQ stub; BASIC is restored on exit |
 | `$0010000-$0011FFF` (bank 1) | DOS, do not touch |
 | `$0012000-$001F7FF` (bank 1) | 54 KB sample playback memory (below the colour RAM window at `$1F800`) |
 | `$0020000-$003FFFF` (banks 2-3) | ROM, write-protected |
@@ -254,18 +255,27 @@ Confirmed by ear on real hardware on 14 November 2026.
 - **Known gaps:** a tune that writes to `$C000-$CFFF` outside its own data
   overwrites Modplay65's glyph block (screen garbage, not a crash). Tunes
   that use illegal 6502 opcodes fail, because those opcodes are 45GS02
-  instructions. 2SID/3SID tunes are untested. Volume and stereo settings
-  do not apply to SID yet.
+  instructions. 2SID/3SID tunes are untested.
 - Pause switches off waveform and gate of the voices but keeps the volume
   register, because many tunes set it only once in their init routine.
 
 ### 7.4 Sound routing
 
 The MEGA65 has four SIDs: `$D400` and `$D420` on the left, `$D440` and
-`$D460` on the right. With the default mixer setting a one-SID tune is
-loud on the left and quiet on the right. Centring it needs the audio mixer
-(`$D6F4/$D6F5`, layout in HARDWARE-NOTES.md); that is postponed until a
-safe way to save and restore the user's mixer setting is confirmed.
+`$D460` on the right. Since core 0.97 each SID has two level registers,
+`$xx1D` (left) and `$xx1E` (right), reachable while bit 4 of `$D63C` is
+set. Modplay65 uses them instead of the audio mixer, so the user's mixer
+setting is never touched:
+
+- one-SID tunes: both levels of SID 1 at `$C0` x volume, i.e. centred;
+- 2SID tunes: SID 1 left, the second SID right; the stereo setting (`,`
+  and `.`) adds 0-100 % of each to the other side;
+- `+`/`-` scale all levels (volume).
+
+The original levels and `$D63C` are saved at start and restored when a
+MOD is played or the program exits. On cores before 0.97 these registers
+do not exist; SID tunes then play with the hardware default routing and
+the info panel says so.
 
 ## 8. User interface
 
@@ -297,21 +307,26 @@ collections usually sit and it is the faster path. D81 support follows later.
 
 | Visualiser | MOD | SID |
 | --- | --- | --- |
-| Level meters per voice | done: note triggers and volume | from register shadow, see below |
-| Oscilloscope per voice | done: sample bytes at the channel's playhead, scaled by volume | not available per voice |
-| Master oscilloscope | planned: mixer read-back `$D6FC/$D6FD` **[verify]** | same |
-| Note display | done | frequency register → note per voice |
+| Level meters per voice | done: note triggers and volume | done: envelope model (below) |
+| Oscilloscope per voice | done: sample bytes at the channel's playhead, scaled by volume | done: waveform rebuilt from the registers |
+| Mix trace | - | done: sum of the three voices x master volume |
+| Note display | done | done: frequency → note, plus waveform, pulse width, ADSR, filter |
 | Pattern view | done | not applicable |
 
-For SID tunes, the mixer read-back (`$D6F4` = source 0-15 or output
-16-23, value at `$D6FC/$D6FD`) can feed a master oscilloscope.
+SID registers are write-only, but since core 0.97 the last written values
+can be read at `$FF65000 + 32 x SID` (loopback). After every play call
+the visualiser (`src/vis/sidvis.c`) copies SID 1's 25 registers and
 
-SID registers are write-only, so per-voice data for SID tunes needs a shadow
-copy. Option: while the play routine runs, map RAM instead of I/O at
-`$D400`, then copy the written values to the real chip after each call. That
-gives the visualiser every register but breaks tunes that write a register
-several times per call. This is decided during the SID spike; the fallback is
-the master oscilloscope plus oscillator 3 and envelope 3 read-back.
+- runs a simple ADSR model per voice, one step per video frame, using the
+  SID's attack/decay/release times (linear, no exponential decay);
+- rebuilds 144 points of each voice's waveform at 8000 points per second:
+  triangle, sawtooth, pulse with the pulse width, noise from a small LFSR,
+  combined waveforms ANDed; scaled by the envelope;
+- adds the three voices, scaled by the master volume, for the mix trace.
+
+Filter, ring modulation and sync are not modelled; the traces show what
+the voices play, not the exact output. On cores before 0.97 the loopback
+reads `$FF` and the visualiser is replaced by a message.
 
 ## 10. Testing
 
